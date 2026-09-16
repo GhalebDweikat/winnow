@@ -1,0 +1,153 @@
+{
+  "cases": 300,
+  "cases_with_errors": 0,
+  "judges": {
+    "lexical": 300
+  },
+  "tools": {
+    "Bash": 131,
+    "Read": 150,
+    "Grep": 19
+  },
+  "label_reasons": {
+    "ident": 458,
+    "none": 786,
+    "line": 271,
+    "unknown": 7
+  },
+  "blocks_scored": 1515,
+  "blocks_unknown": 7,
+  "needed_fraction": 0.4812,
+  "judge_input_tokens": 0,
+  "est_cost_usd_at_jev_price": 0.0,
+  "latency_ms_median": 0,
+  "thresholds": [
+    {
+      "threshold": 0.1,
+      "hidden_blocks": 562,
+      "hidden_fraction_chars": 0.27,
+      "regret": 0.3114,
+      "hidden_precision": 0.5961
+    },
+    {
+      "threshold": 0.2,
+      "hidden_blocks": 1041,
+      "hidden_fraction_chars": 0.522,
+      "regret": 0.6283,
+      "hidden_precision": 0.56
+    },
+    {
+      "threshold": 0.3,
+      "hidden_blocks": 1309,
+      "hidden_fraction_chars": 0.7393,
+      "regret": 0.7997,
+      "hidden_precision": 0.5546
+    },
+    {
+      "threshold": 0.4,
+      "hidden_blocks": 1421,
+      "hidden_fraction_chars": 0.8493,
+      "regret": 0.9163,
+      "hidden_precision": 0.5299
+    },
+    {
+      "threshold": 0.5,
+      "hidden_blocks": 1474,
+      "hidden_fraction_chars": 0.9046,
+      "regret": 0.9575,
+      "hidden_precision": 0.5265
+    },
+    {
+      "threshold": 0.6,
+      "hidden_blocks": 1489,
+      "hidden_fraction_chars": 0.9323,
+      "regret": 0.9698,
+      "hidden_precision": 0.5252
+    },
+    {
+      "threshold": 0.7,
+      "hidden_blocks": 1498,
+      "hidden_fraction_chars": 0.95,
+      "regret": 0.9808,
+      "hidden_precision": 0.5227
+    },
+    {
+      "threshold": 0.8,
+      "hidden_blocks": 1506,
+      "hidden_fraction_chars": 0.9691,
+      "regret": 0.9904,
+      "hidden_precision": 0.5206
+    },
+    {
+      "threshold": 0.9,
+      "hidden_blocks": 1510,
+      "hidden_fraction_chars": 0.9766,
+      "regret": 0.9931,
+      "hidden_precision": 0.5205
+    }
+  ],
+  "calibration": [
+    {
+      "bin": "0.0-0.1",
+      "n": 562,
+      "mean_p": 0.06,
+      "needed_rate": 0.404
+    },
+    {
+      "bin": "0.1-0.2",
+      "n": 479,
+      "mean_p": 0.142,
+      "needed_rate": 0.482
+    },
+    {
+      "bin": "0.2-0.3",
+      "n": 268,
+      "mean_p": 0.242,
+      "needed_rate": 0.466
+    },
+    {
+      "bin": "0.3-0.4",
+      "n": 112,
+      "mean_p": 0.329,
+      "needed_rate": 0.759
+    },
+    {
+      "bin": "0.4-0.5",
+      "n": 53,
+      "mean_p": 0.445,
+      "needed_rate": 0.566
+    },
+    {
+      "bin": "0.5-0.6",
+      "n": 15,
+      "mean_p": 0.541,
+      "needed_rate": 0.6
+    },
+    {
+      "bin": "0.6-0.7",
+      "n": 9,
+      "mean_p": 0.639,
+      "needed_rate": 0.889
+    },
+    {
+      "bin": "0.7-0.8",
+      "n": 8,
+      "mean_p": 0.735,
+      "needed_rate": 0.875
+    },
+    {
+      "bin": "0.8-0.9",
+      "n": 4,
+      "mean_p": 0.845,
+      "needed_rate": 0.5
+    },
+    {
+      "bin": "0.9-1.0",
+      "n": 5,
+      "mean_p": 0.944,
+      "needed_rate": 1.0
+    }
+  ],
+  "ece": 0.3147,
+  "note": "Same 300 cases as score-typesafe.json, judged by the keyless lexical baseline; see docs/DESIGN.md"
+}

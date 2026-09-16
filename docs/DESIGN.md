@@ -42,7 +42,7 @@ Questions reference the state by path, as TypeSafe recommends, so the model read
 | drop (0.3) <= p < keep | keep, logged as uncertain |
 | p < drop | hide |
 
-Plus two gates: the error question (hide nothing if P(error) >= keep) and the minimum prune ratio (do not rewrite for a small saving). Start conservative, then move `drop` up as the regret rate stays low.
+Plus two gates: the error question (hide nothing if P(error) >= keep) and the minimum prune ratio (do not rewrite for a small saving). Start conservative, then move `drop` up as the regret rate stays low. On the first replay numbers below, `drop=0.2` is the conservative starting point for active mode, not 0.3.
 
 ## Regret as the metric
 
@@ -65,7 +65,38 @@ Design choices that matter: `Write` content and edit `new_string` count for line
 
 Known bias: Claude can read a block, use it to understand the code, and never quote it. Those blocks are labeled not needed, so **regret from replay is an upper bound** and savings an estimate. Per-block `reason` is recorded so the label mix can be audited.
 
-First run on 300 real cases from this machine (16 Sep 2026, window 12): 1,380 labeled blocks, needed fraction 0.54 (Bash 0.64, Read 0.49, Grep 0.74), reasons line 322 / ident 418 / none 640. The keyless `lexical` baseline scored ECE 0.38 and at `drop=0.3` would hide 81% of text at 86% regret, which is to say it is not a judge. That is the bar.
+### First numbers: Jev vs the lexical baseline
+
+300 cases from this machine's transcripts (16 Sep 2026, window 12, 1,515 labeled blocks, needed fraction 0.48; reasons line 271 / ident 458 / none 786). Both judges saw identical cases. Raw score files are in `docs/results/2026-09-16/`.
+
+| | Jev (`jev-latest`) | lexical baseline |
+|---|---|---|
+| Expected calibration error | **0.14** | 0.31 |
+| Median latency per case | 86 ms | n/a |
+| Cost for all 300 cases | $0.036 (863k input tokens) | 0 |
+| At `drop=0.3`: text hidden | 22.6% | 81.5% |
+| At `drop=0.3`: regret (upper bound) | 21.3% | 85.8% |
+| At `drop=0.3`: hidden precision | 59% | 26% |
+
+Jev's calibration table (mean predicted P(needed) vs observed rate under the weak label):
+
+| bin | n | mean p | needed rate |
+|---|---|---|---|
+| 0.0–0.1 | 39 | 0.07 | 0.26 |
+| 0.1–0.2 | 126 | 0.15 | 0.38 |
+| 0.2–0.3 | 216 | 0.24 | 0.45 |
+| 0.3–0.5 | 408 | 0.40 | 0.49 |
+| 0.5–0.8 | 598 | 0.63 | 0.51 |
+| 0.8–1.0 | 128 | 0.84 | 0.58 |
+
+Reading it honestly:
+
+- Jev is a real judge and the baseline is not; the ordering is right and the low bins are genuinely lower. That is the headline.
+- The observed rate never gets below 0.26 even where Jev says 0.07. Part of that is the weak label's known over-marking (the `ident` rule fires more than the `line` rule); part may be Jev spreading probability across the 0.2–0.6 range for this question. The two can be separated by hand-labeling a sample of the 0.0–0.2 bin.
+- The default `drop=0.3` is too aggressive for active mode on this evidence. `drop=0.2` hides about 10% of text at 8% regret; `drop=0.1` about 2% at 1.4%. Start there and move up as hand-checked regret stays low.
+- The question phrasing and the task state are the levers. This harness makes every change to `_block_questions` or `transcript.read_task` a one-command experiment costing a few cents.
+
+Shadow mode cannot measure regret: nothing is hidden, so nothing is recalled. Live regret needs active mode at a conservative threshold plus the recall counter.
 
 ## Latency, measured
 

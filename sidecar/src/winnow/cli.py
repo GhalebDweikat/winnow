@@ -175,7 +175,11 @@ def run_replay_command(args: Any) -> int:
         cases = (replay.case_from_dict(d) for d in replay.read_jsonl(cases_path))
         n = replay.write_jsonl(out, replay.judge_cases(cases, judge, cfg, limit=args.limit))
         print(f"{n} cases judged by {judge.name} -> {out}")
-        print(replay.format_report(replay.score(replay.read_jsonl(out))))
+        scored = replay.score(replay.read_jsonl(out))
+        score_path = out.with_name(out.name.replace("judged-", "score-", 1)).with_suffix(".json")
+        score_path.write_text(json.dumps(scored, indent=2), encoding="utf-8")
+        print(replay.format_report(scored))
+        print(f"\nscore written to {score_path}")
         return 0
     if args.replay_command == "score":
         scored = replay.score(replay.read_jsonl(Path(args.judged)))

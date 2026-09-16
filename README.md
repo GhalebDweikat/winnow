@@ -199,6 +199,8 @@ winnow replay score --judged ~/.winnow/replay/judged-typesafe.jsonl
 
 Cases, judged files and scores live in `~/.winnow/replay/`. Nothing leaves the machine unless you pick a judge that calls an API.
 
+First results on 300 real cases (Jev vs the baseline, calibration table, what threshold to start with) are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/`.
+
 ## Overhead and housekeeping
 
 ```bash
