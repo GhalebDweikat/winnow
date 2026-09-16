@@ -35,19 +35,34 @@ A second hook runs at prompt time. It ranks your project's memory files (and any
 
 Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer (the version that let hooks replace tool output for all tools).
 
+The repo is its own plugin marketplace, so it installs like any other Claude Code plugin. Installing applies to every Claude Code surface that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions.
+
+**From GitHub** (the repo is private for now, so clone over HTTPS with your `gh` credentials):
+
 ```bash
-git clone <this repo> winnow
-claude --plugin-dir ./winnow
+CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1 claude plugin marketplace add GhalebDweikat/winnow
+claude plugin install winnow@winnow
 ```
 
-That loads the plugin for one session. To keep it, add the repo as a local marketplace:
+**From a local clone** (what you want while developing):
 
 ```bash
+git clone https://github.com/GhalebDweikat/winnow.git
 claude plugin marketplace add ./winnow
 claude plugin install winnow@winnow
 ```
 
-The first hook invocation runs `uv sync` in `sidecar/`, which takes a few seconds once.
+After pulling changes, run `claude plugin update winnow@winnow`; installed plugins are copied, not linked. For a hot-reload loop instead, load the checkout directly for one session:
+
+```bash
+claude --plugin-dir ./winnow
+```
+
+To scope the plugin to one project rather than your whole account, add `--scope project` to the `marketplace add` command; that writes it into that project's `.claude/settings.json`.
+
+Turn it off without uninstalling: `claude plugin disable winnow@winnow`.
+
+The first hook invocation runs `uv sync` in `sidecar/`, which takes a few seconds once. Until you set a judge key (below), every hook passes the tool result through untouched and logs the reason in `~/.winnow/errors.log`.
 
 ### Credentials
 
