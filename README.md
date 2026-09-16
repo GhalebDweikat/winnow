@@ -1,5 +1,7 @@
 # winnow
 
+[![tests](https://github.com/GhalebDweikat/winnow/actions/workflows/tests.yml/badge.svg)](https://github.com/GhalebDweikat/winnow/actions/workflows/tests.yml)
+
 A calibrated context sieve for Claude Code.
 
 Every large `Read`, `Bash`, or `Grep` result is judged before it enters Claude's context. Blocks the judge is confident you don't need are replaced with a three-line stub: what was hidden, a one-paragraph summary from a cheap model, and a key that restores the full text on demand. Nothing is lost; it just stops costing tokens until you ask for it.
@@ -114,7 +116,7 @@ uv tool install ./winnow/sidecar
 winnow doctor
 ```
 
-Commands: `doctor`, `demo [--fake]`, `stats`, `recall <key> [--start N --end M]`, `mcp`, `hook <event>` (what Claude Code runs).
+Commands: `doctor`, `demo [--fake]`, `stats`, `recall <key> [--start N --end M]`, `replay {extract,judge,score,run}`, `bench`, `clean`, `mcp`, `hook <event>` (what Claude Code runs).
 
 ## What leaves your machine, and what it costs
 
@@ -143,6 +145,7 @@ All settings are environment variables (or lines in `~/.winnow/env`). Defaults a
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `WINNOW_MODE` | `active` | `active` rewrites tool results; `shadow` judges and logs only |
 | `WINNOW_JUDGE` | `typesafe` | `typesafe`, `adapter`, or `off` |
 | `WINNOW_MODEL` | `jev-latest` | Jev model id |
 | `WINNOW_JUDGE_TIMEOUT` | `15` | Seconds per judge call, including one retry |
@@ -166,6 +169,42 @@ All settings are environment variables (or lines in `~/.winnow/env`). Defaults a
 | `WINNOW_CONTEXT_MAX_CHARS` | `8000` | Total injected characters (Claude Code caps hook output at 10,000) |
 | `WINNOW_CONTEXT_MAX_CANDIDATES` | `60` | Max files considered per prompt |
 | `WINNOW_HOME` | `~/.winnow` | Cache, decision log, env file |
+
+## Shadow mode: run it for a week without trusting it
+
+```
+WINNOW_MODE=shadow
+```
+
+In shadow mode every hook does its full job, judging, caching and logging, but never changes what Claude sees and never calls the summarizer. Use it for the first week with any judge. `winnow stats` then reports how many results it *would* have rewritten and how many characters it would have saved, and each decision line in `~/.winnow/decisions.jsonl` carries the per-block probabilities and a cache key, so `winnow recall <key>` shows you exactly what would have been hidden. Switch to `WINNOW_MODE=active` when the decisions look right.
+
+## Replay: score a judge on your own history, no key needed
+
+Your Claude Code transcripts already hold hundreds of large tool results, each followed by what Claude did next. `winnow replay` turns that into a labeled benchmark and scores a judge against it, offline.
+
+```bash
+winnow replay run --judge lexical            # every transcript under ~/.claude/projects
+winnow replay run --judge lexical --limit 200 path/to/session.jsonl
+```
+
+The label is weak but free: a block counts as *needed* if, later in the same turn, Claude reused one of its lines in an edit, write or command, or mentioned a distinctive identifier that appears in few other blocks. Blocks that Claude read, understood, and never quoted get labeled *not needed*, so treat the reported regret as an upper bound.
+
+The report gives, for each `WINNOW_DROP` threshold, how much would be hidden and what share of needed blocks that would cost (regret), plus a calibration table and expected calibration error. The `lexical` judge is a keyless word-overlap baseline; any real judge has to beat it. When you have a key:
+
+```bash
+winnow replay judge --judge adapter        # re-judge the same cases
+winnow replay judge --judge typesafe
+winnow replay score --judged ~/.winnow/replay/judged-typesafe.jsonl
+```
+
+Cases, judged files and scores live in `~/.winnow/replay/`. Nothing leaves the machine unless you pick a judge that calls an API.
+
+## Overhead and housekeeping
+
+```bash
+winnow bench          # hook startup cost with the judge off; what every judged tool call pays
+winnow clean          # drop cache entries older than 30 days, then trim to 200 MB
+```
 
 ## Measuring it
 

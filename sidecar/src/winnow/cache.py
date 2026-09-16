@@ -38,6 +38,57 @@ def load(cfg: Config, key: str) -> dict[str, Any] | None:
         return None
 
 
+def clean(cfg: Config, *, older_than_days: float = 30, max_mb: float = 200, dry_run: bool = False) -> dict[str, Any]:
+    """Delete cache entries older than ``older_than_days``, then the oldest until under ``max_mb``."""
+    entries: list[tuple[float, int, Path]] = []
+    if cfg.cache_dir.is_dir():
+        for path in cfg.cache_dir.glob("*.json"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append((stat.st_mtime, stat.st_size, path))
+    entries.sort()  # oldest first
+    now = time.time()
+    cutoff = now - older_than_days * 86400
+    doomed: list[Path] = [p for mtime, _, p in entries if mtime < cutoff]
+    keep = [(m, s, p) for m, s, p in entries if m >= cutoff]
+    total = sum(s for _, s, _ in keep)
+    limit = max_mb * 1024 * 1024
+    while keep and total > limit:
+        _, size, path = keep.pop(0)
+        doomed.append(path)
+        total -= size
+    freed = 0
+    for path in doomed:
+        try:
+            freed += path.stat().st_size
+            if not dry_run:
+                path.unlink()
+        except OSError:
+            pass
+    markers = cfg.home / "notified"
+    stale_markers = 0
+    if markers.is_dir():
+        for marker in markers.iterdir():
+            try:
+                if marker.stat().st_mtime < now - 2 * 86400:
+                    stale_markers += 1
+                    if not dry_run:
+                        marker.unlink()
+            except OSError:
+                pass
+    return {
+        "entries_before": len(entries),
+        "deleted": len(doomed),
+        "bytes_freed": freed,
+        "entries_after": len(entries) - len(doomed),
+        "bytes_after": total,
+        "stale_session_markers_removed": stale_markers,
+        "dry_run": dry_run,
+    }
+
+
 def slice_lines(text: str, start: int | None, end: int | None, line_offset: int = 1) -> str:
     """Return lines ``start``..``end`` (inclusive, in the numbering the stub used)."""
     lines = text.split("\n")

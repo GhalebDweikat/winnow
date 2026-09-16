@@ -60,20 +60,27 @@ def stats(cfg: Config) -> dict[str, Any]:
     recalled_keys: set[str] = set()
     context_injections = 0
     reasons: dict[str, int] = {}
+    shadow_judged = shadow_would_rewrite = shadow_saved = 0
 
     for event in read_events(cfg):
         if event.get("demo"):
             continue
         kind = event.get("event")
         if kind == "post_tool_use":
+            if event.get("judge_ms") is not None:
+                judge_ms.append(int(event["judge_ms"]))
+            judge_tokens += int(event.get("judge_input_tokens") or 0)
+            if event.get("mode") == "shadow":
+                shadow_judged += 1
+                if event.get("would_rewrite"):
+                    shadow_would_rewrite += 1
+                    shadow_saved += max(0, int(event.get("chars_before") or 0) - int(event.get("chars_after") or 0))
+                continue
             judged += 1
             reason = str(event.get("reason", "?"))
             reasons[reason] = reasons.get(reason, 0) + 1
-            if event.get("judge_ms") is not None:
-                judge_ms.append(int(event["judge_ms"]))
             if event.get("summary_ms") is not None:
                 summary_ms.append(int(event["summary_ms"]))
-            judge_tokens += int(event.get("judge_input_tokens") or 0)
             if event.get("rewritten"):
                 rewritten += 1
                 chars_before += int(event.get("chars_before") or 0)
@@ -105,4 +112,8 @@ def stats(cfg: Config) -> dict[str, Any]:
         "judge_input_tokens": judge_tokens,
         "est_judge_cost_usd": round(judge_tokens / 1_000_000 * JEV_USD_PER_MILLION_INPUT, 6),
         "context_injections": context_injections,
+        "shadow_outputs_judged": shadow_judged,
+        "shadow_would_rewrite": shadow_would_rewrite,
+        "shadow_chars_would_save": shadow_saved,
+        "shadow_est_tokens_would_save": shadow_saved // 4,
     }

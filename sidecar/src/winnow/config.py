@@ -100,6 +100,7 @@ def credential_status() -> dict[str, str]:
 @dataclass(frozen=True)
 class Config:
     home: Path
+    mode: str
     judge: str
     model: str
     judge_timeout: float
@@ -127,6 +128,7 @@ class Config:
     def from_env(cls) -> "Config":
         return cls(
             home=default_home(),
+            mode=_str("WINNOW_MODE", "active").strip().lower(),
             judge=_str("WINNOW_JUDGE", "typesafe").strip().lower(),
             model=_str("WINNOW_MODEL", "jev-latest"),
             judge_timeout=_float("WINNOW_JUDGE_TIMEOUT", 15.0),
@@ -152,8 +154,17 @@ class Config:
         )
 
     @property
+    def shadow(self) -> bool:
+        """Judge and log, but never change what Claude sees."""
+        return self.mode == "shadow"
+
+    @property
     def cache_dir(self) -> Path:
         return self.home / "cache"
+
+    @property
+    def replay_dir(self) -> Path:
+        return self.home / "replay"
 
     @property
     def log_path(self) -> Path:

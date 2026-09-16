@@ -12,8 +12,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from typesafe_sdk import Noul
-
 from winnow import cache, log
 from winnow.chunk import Block, chunk, group_contiguous
 from winnow.config import Config
@@ -54,8 +52,19 @@ BLOCK_CRITERIA = {
 }
 
 
-def _block_questions(blocks: list[Block]) -> dict[str, Noul]:
-    questions: dict[str, Noul] = {
+def worth_judging(payload: dict[str, Any], cfg: Config) -> bool:
+    """Cheap pre-check that needs no SDK import: right tool, big enough output."""
+    tool_name = str(payload.get("tool_name") or "")
+    if tool_name not in cfg.tools:
+        return False
+    extracted = extract(tool_name, payload.get("tool_input"), payload.get("tool_response", payload.get("tool_output")))
+    return extracted is not None and len(extracted.text) >= cfg.min_chars
+
+
+def _block_questions(blocks: list[Block]) -> dict[str, Any]:
+    from typesafe_sdk import Noul  # imported here so small results never pay for the SDK
+
+    questions: dict[str, Any] = {
         block.id: Noul(
             instructions=f"Is `blocks.{block.id}` needed to accomplish `task`? Judge it against `task` and `tool`.",
             criteria=BLOCK_CRITERIA,
@@ -115,6 +124,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "post_tool_use",
+        "mode": cfg.mode,
         "session_id": session_id,
         "tool_use_id": tool_use_id,
         "tool": tool_name,
@@ -161,6 +171,30 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
             ],
         },
     )
+
+    if cfg.shadow:
+        # Everything up to here ran for real; only the rewrite is withheld.
+        preview_stubs = {
+            group[0].index: render_stub(
+                group, key, None, max((result.probabilities.get(b.id, 0.0) for b in group), default=0.0), extracted.line_offset
+            )
+            for group in group_contiguous(verdict.pruned)
+        }
+        preview = assemble(blocks, verdict, preview_stubs)
+        log.log_event(
+            cfg,
+            {
+                **event,
+                "rewritten": False,
+                "would_rewrite": True,
+                "reason": verdict.reason,
+                "key": key,
+                "n_hidden": len(verdict.pruned),
+                "n_uncertain": len(verdict.uncertain),
+                "chars_after": len(preview),
+            },
+        )
+        return None
 
     stubs: dict[int, str] = {}
     summary_ms = 0
@@ -213,6 +247,7 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     candidates = load_candidates(cfg, str(payload.get("cwd") or ""))
     if not candidates:
         return None
+    from typesafe_sdk import Noul
 
     state = {
         "prompt": prompt[:4000],
@@ -235,6 +270,7 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "user_prompt_submit",
+        "mode": cfg.mode,
         "session_id": str(payload.get("session_id") or ""),
         "n_candidates": len(candidates),
         "judge": runtime.judge.name,
@@ -251,6 +287,9 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     event.update(judge_ms=result.latency_ms, judge_input_tokens=result.input_tokens, probabilities=result.probabilities)
     if not chosen:
         log.log_event(cfg, {**event, "injected": False, "reason": "below_gate"})
+        return None
+    if cfg.shadow:
+        log.log_event(cfg, {**event, "injected": False, "would_inject": True, "reason": "shadow", "chosen": [c.id for c in chosen]})
         return None
 
     parts = ["winnow selected these files as relevant to this prompt (read them here instead of opening them):"]
