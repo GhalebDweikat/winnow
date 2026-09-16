@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Read|Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow hook post-tool-use",
+            "timeout": 60,
+            "statusMessage": "winnow: judging tool output"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow hook user-prompt-submit",
+            "timeout": 20,
+            "statusMessage": "winnow: selecting context"
+          }
+        ]
+      }
+    ]
+  }
+}

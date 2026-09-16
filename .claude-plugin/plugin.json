@@ -1,0 +1,11 @@
+{
+  "name": "winnow",
+  "version": "0.1.0",
+  "description": "A calibrated context sieve for Claude Code. Every large tool result is judged by a System One model before it enters context; irrelevant blocks are replaced with a summary and a recall key.",
+  "author": {
+    "name": "Ghaleb Dweikat",
+    "email": "ghalebdweikat@gmail.com"
+  },
+  "keywords": ["context", "typesafe", "jev", "system-one", "hooks", "pruning"],
+  "license": "MIT"
+}
