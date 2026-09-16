@@ -45,6 +45,58 @@ def _paths(name: str) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser() for p in raw.split(os.pathsep) if p.strip())
 
 
+def default_home() -> Path:
+    return Path(_str("WINNOW_HOME", str(Path.home() / ".winnow"))).expanduser()
+
+
+def env_file_path() -> Path:
+    return default_home() / "env"
+
+
+def load_env_file(path: Path | None = None) -> list[str]:
+    """Load ``KEY=VALUE`` lines from ``~/.winnow/env`` into the process environment.
+
+    Hooks inherit the environment of whatever launched Claude Code. A key
+    exported in one terminal is invisible to the desktop app, so winnow also
+    reads a small env file in its home directory. Values already present in
+    the environment win. Returns the names that were loaded.
+    """
+    path = env_file_path() if path is None else path
+    if not path.is_file():
+        return []
+    loaded: list[str] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        name, sep, value = line.partition("=")
+        name = name.strip()
+        if not sep or not name or not name.replace("_", "").isalnum():
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if name not in os.environ:
+            os.environ[name] = value
+            loaded.append(name)
+    return loaded
+
+
+def credential_status() -> dict[str, str]:
+    """Where each key is coming from, for ``winnow doctor``."""
+    result: dict[str, str] = {}
+    for name in ("TYPESAFE_API_KEY", "ANTHROPIC_API_KEY"):
+        value = os.environ.get(name, "")
+        result[name] = f"set ({value[:6]}...)" if len(value) > 8 else ("set" if value else "not set")
+    return result
+
+
 @dataclass(frozen=True)
 class Config:
     home: Path
@@ -74,7 +126,7 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
-            home=Path(_str("WINNOW_HOME", str(Path.home() / ".winnow"))).expanduser(),
+            home=default_home(),
             judge=_str("WINNOW_JUDGE", "typesafe").strip().lower(),
             model=_str("WINNOW_MODEL", "jev-latest"),
             judge_timeout=_float("WINNOW_JUDGE_TIMEOUT", 15.0),

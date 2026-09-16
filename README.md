@@ -64,19 +64,40 @@ Turn it off without uninstalling: `claude plugin disable winnow@winnow`.
 
 The first hook invocation runs `uv sync` in `sidecar/`, which takes a few seconds once. Until you set a judge key (below), every hook passes the tool result through untouched and logs the reason in `~/.winnow/errors.log`.
 
-### Credentials
+## Add your keys
 
-| Backend | Env | Notes |
-|---|---|---|
-| Jev (default) | `TYPESAFE_API_KEY` | From console.typesafe.ai once you are off the waitlist. `WINNOW_JUDGE=typesafe`. |
-| Adapter | `ANTHROPIC_API_KEY` or an `ant auth login` profile | `WINNOW_JUDGE=adapter`. Emulates Jev's interface on Claude Haiku 4.5. Not calibrated, but the whole pipeline works. |
-| Summaries | same Anthropic credentials | `WINNOW_SUMMARY=0` to disable. Without credentials, stubs say "Summary unavailable" and still work. |
+winnow needs one key for the judge and, optionally, one for summaries. Nothing runs until at least the judge key is in place; until then every hook passes results through untouched.
 
-Check everything at once:
+**1. Get a Jev key.** Jev is in early access. Join the waitlist at [typesafe.ai](https://typesafe.ai), and once you're admitted create a key at [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys). No key yet? Skip to step 3.
+
+**2. Put the keys where hooks can see them.** A hook runs with the environment of whatever launched Claude Code. A key exported in one terminal is invisible to the desktop app and to IDE sessions. Either of these works everywhere:
+
+- A file at `~/.winnow/env` (on Windows, `%USERPROFILE%\.winnow\env`), one `KEY=VALUE` per line. winnow reads it on every hook call. Keep it private; it is outside the repo.
+
+  ```
+  TYPESAFE_API_KEY=ts-...
+  ANTHROPIC_API_KEY=sk-ant-...
+  ```
+
+- Or the `env` block of `~/.claude/settings.json`, which Claude Code applies to every session and every subprocess it starts:
+
+  ```json
+  { "env": { "TYPESAFE_API_KEY": "ts-...", "ANTHROPIC_API_KEY": "sk-ant-..." } }
+  ```
+
+A variable already in the environment wins over the file, so a plain shell export still works for CLI use.
+
+**3. No Jev key yet? Use the adapter.** Add `WINNOW_JUDGE=adapter` to the same file. The adapter sends the identical request to Claude Haiku 4.5 through your Anthropic credentials (`ANTHROPIC_API_KEY`, or an `ant auth login` profile). Its probabilities are not calibrated, but the whole pipeline works, and switching to Jev later is one line.
+
+**4. Verify.**
 
 ```bash
 uv run --project sidecar winnow doctor
 ```
+
+It prints which keys were found, where they came from, and whether each backend initializes.
+
+Summaries use the Anthropic credentials. Set `WINNOW_SUMMARY=0` to turn them off; stubs then say "Summary unavailable" and everything else still works.
 
 ## Configuration
 

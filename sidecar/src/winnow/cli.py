@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from winnow import __version__, cache, log
-from winnow.config import Config
+from winnow.config import Config, credential_status, env_file_path, load_env_file
 
 
 def _read_stdin_json() -> dict[str, Any]:
@@ -64,10 +64,14 @@ def run_stats() -> int:
     return 0
 
 
-def run_doctor() -> int:
+def run_doctor(loaded_from_env_file: list[str]) -> int:
     cfg = Config.from_env()
     print(f"winnow {__version__}")
     print(f"home                     {cfg.home}")
+    env_path = env_file_path()
+    print(f"env file                 {env_path} ({'found, loaded ' + ', '.join(loaded_from_env_file) if loaded_from_env_file else ('found, nothing new' if env_path.is_file() else 'not present')})")
+    for name, status in credential_status().items():
+        print(f"{name:24} {status}")
     print(f"judge                    {cfg.judge} (model={cfg.model if cfg.judge == 'typesafe' else cfg.adapter_model})")
     print(f"tools                    {', '.join(cfg.tools)}")
     print(f"thresholds               drop<{cfg.drop}  keep>={cfg.keep}  min_prune_ratio={cfg.min_prune_ratio}")
@@ -116,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check configuration and backends")
 
     args = parser.parse_args(argv)
+    loaded = load_env_file()
     if args.command == "hook":
         return run_hook(args.event)
     if args.command == "recall":
@@ -128,5 +133,5 @@ def main(argv: list[str] | None = None) -> int:
         mcp_main()
         return 0
     if args.command == "doctor":
-        return run_doctor()
+        return run_doctor(loaded)
     return 2
