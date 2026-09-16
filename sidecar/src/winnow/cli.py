@@ -27,13 +27,38 @@ def _write_json(obj: Any) -> None:
     sys.stdout.buffer.flush()
 
 
+def _notify_once(cfg: Config, session_id: str, message: str) -> dict[str, Any] | None:
+    """Return a systemMessage the first time per session; stay silent afterwards."""
+    marker = cfg.home / "notified" / (session_id or "no-session")
+    try:
+        if marker.exists():
+            return None
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        return None
+    return {"systemMessage": message}
+
+
 def run_hook(event: str) -> int:
     cfg = Config.from_env()
     try:
         from winnow.hooks import Runtime, post_tool_use, user_prompt_submit
 
         payload = _read_stdin_json()
-        runtime = Runtime.from_config(cfg)
+        try:
+            runtime = Runtime.from_config(cfg)
+        except Exception as exc:  # noqa: BLE001 - most often: no key for the configured judge
+            log.log_error(cfg, "runtime", exc)
+            notice = _notify_once(
+                cfg,
+                str(payload.get("session_id") or ""),
+                f"winnow is installed but its judge could not start ({type(exc).__name__}: {str(exc)[:140]}). "
+                "Tool results are passing through untouched. Run `winnow doctor` to fix it.",
+            )
+            if notice is not None:
+                _write_json(notice)
+            return 0
         if event == "post-tool-use":
             output = post_tool_use(payload, runtime)
         elif event == "user-prompt-submit":
@@ -119,8 +144,15 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("mcp", help="run the recall MCP server on stdio")
     sub.add_parser("doctor", help="check configuration and backends")
 
+    demo = sub.add_parser("demo", help="judge a synthetic tool result and show what Claude would see")
+    demo.add_argument("--fake", action="store_true", help="use a keyword judge; needs no keys")
+
     args = parser.parse_args(argv)
     loaded = load_env_file()
+    if args.command == "demo":
+        from winnow.demo import run_demo
+
+        return run_demo(fake=args.fake)
     if args.command == "hook":
         return run_hook(args.event)
     if args.command == "recall":

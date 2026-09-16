@@ -9,7 +9,7 @@ missing.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from typesafe_sdk import Noul
@@ -31,6 +31,7 @@ class Runtime:
     cfg: Config
     judge: Judge | None
     summarizer: Summarizer | None
+    extra_event: dict[str, Any] = field(default_factory=dict)  # merged into every log line
 
     @classmethod
     def from_config(cls, cfg: Config) -> "Runtime":
@@ -112,6 +113,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
     session_id = str(payload.get("session_id") or "")
     tool_use_id = str(payload.get("tool_use_id") or "")
     event: dict[str, Any] = {
+        **runtime.extra_event,
         "event": "post_tool_use",
         "session_id": session_id,
         "tool_use_id": tool_use_id,
@@ -231,6 +233,7 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     }
 
     event: dict[str, Any] = {
+        **runtime.extra_event,
         "event": "user_prompt_submit",
         "session_id": str(payload.get("session_id") or ""),
         "n_candidates": len(candidates),

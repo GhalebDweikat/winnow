@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv sync -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\"",
+            "timeout": 600,
+            "statusMessage": "winnow: preparing sidecar environment"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Read|Bash|Grep",
@@ -19,7 +32,7 @@
           {
             "type": "command",
             "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow hook user-prompt-submit",
-            "timeout": 20,
+            "timeout": 30,
             "statusMessage": "winnow: selecting context"
           }
         ]

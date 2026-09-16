@@ -62,6 +62,6 @@ Every rewrite logs its key. Every `winnow_recall` logs its key. Regret = recalle
 1. **Ship v0 against the adapter**, then swap to Jev when the key arrives. Same code.
 2. **Replay evaluation.** Take real transcripts, re-run the judge over every large tool result, and score against what the agent actually used afterward. Publish regret vs. threshold.
 3. **Read narrowing (`PreToolUse` on `Read`).** For a large file, ask which regions answer the assistant's stated intent and rewrite the call with `offset`/`limit` via `updatedInput`. Riskier because intent is inferred; do it after the pruning data exists.
-4. **Done-ness gate (`Stop`).** A Noul over the transcript tail: is the task complete? The open question is what state the judge needs: the original request, the todo list, test output, and the final assistant message are the candidates. Decide after looking at real Stop payloads.
+4. **Done-ness gate (`Stop`).** A Noul (TypeSafe's yes/no question type, answered with a probability) over the transcript tail: is the task complete? The open question is what state the judge needs: the original request, the todo list, test output, and the final assistant message are the candidates. Decide after looking at real Stop payloads.
 5. **Resident sidecar.** Switch `hooks.json` to `http` hooks against a local server started by a `SessionStart` hook.
 6. **Vendor-neutral judge interface.** `judge.py` already has it. Add a fine-tuned encoder backend when one is worth comparing.

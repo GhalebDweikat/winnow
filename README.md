@@ -2,17 +2,17 @@
 
 A calibrated context sieve for Claude Code.
 
-Every large `Read`, `Bash`, or `Grep` result is judged by a System One model before it enters context. Blocks the judge is confident you don't need are replaced with a three-line stub: what was hidden, a one-paragraph summary from a cheap model, and a key that restores the full text on demand. Nothing is ever lost; it just stops costing tokens until you ask for it.
+Every large `Read`, `Bash`, or `Grep` result is judged before it enters Claude's context. Blocks the judge is confident you don't need are replaced with a three-line stub: what was hidden, a one-paragraph summary from a cheap model, and a key that restores the full text on demand. Nothing is lost; it just stops costing tokens until you ask for it.
 
-The judge is [TypeSafe's Jev](https://typesafe.ai), a model that answers typed yes/no questions with calibrated probabilities instead of generating text. One call, one question per block, all evaluated in parallel, a few hundred milliseconds. Until you have a Jev key, the same code runs against TypeSafe's LLM-backed adapter.
+**Terms used below.** The *judge* is the model that answers one yes/no question per block ("is this block needed for the current task?") with a probability. By default that is **Jev**, TypeSafe AI's *System One* model: a model that returns calibrated probabilities for typed questions instead of generating text, so a hundred questions come back in one call in a few hundred milliseconds. Jev is in early access. The *adapter* is TypeSafe's `system-one-adapter` package, which answers the same questions by prompting Claude Haiku 4.5; it is not calibrated, but it lets the whole pipeline run today.
 
 ## What it does
 
 ```
 Read big.py  ──►  Claude Code  ──►  PostToolUse hook  ──►  winnow
                                                              │
-        split into blocks ◄──────────────────────────────────┘
-        ask the judge: "is block N needed for the current task?"  (one call, N questions)
+        split into ~25-line blocks ◄─────────────────────────┘
+        one call to the judge: "is block N needed for the current task?"  ×N, in parallel
         keep confident-yes and uncertain blocks verbatim
         hide confident-no blocks:  cache full text  ─►  summarize  ─►  stub
                                                              │
@@ -27,24 +27,15 @@ A stub looks like this:
 [winnow] Full text cached as key a1b2c3d4e5f6. Call winnow_recall(key="a1b2c3d4e5f6", start=41, end=188) if you need it.
 ```
 
-Two safety rules are hard-coded. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `drop` and `keep`), it is kept.
+Two safety rules are built in. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `WINNOW_DROP` and `WINNOW_KEEP`), it is kept. Both thresholds are tunable; the rules themselves are not optional.
 
-A second hook runs at prompt time. It ranks your project's memory files (and any directories you point it at) against the prompt and injects the relevant ones, so Claude reads what it needs without a round of `Read` calls.
+A second hook runs at prompt time. It ranks the memory files Claude Code keeps for the project (`~/.claude/projects/<project>/memory/*.md`, everything except the `MEMORY.md` index, which Claude already loads) plus any directories in `WINNOW_CONTEXT_DIRS` against your prompt, and injects the relevant ones so Claude reads what it needs without a round of `Read` calls.
 
-## Install
+What winnow changes is only what Claude sees. Files on disk, the commands that ran, and Claude Code's own transcript are untouched.
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer (the version that let hooks replace tool output for all tools).
+## Quick start
 
-The repo is its own plugin marketplace, so it installs like any other Claude Code plugin. Installing applies to every Claude Code surface that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions.
-
-**From GitHub** (the repo is private for now, so clone over HTTPS with your `gh` credentials):
-
-```bash
-CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1 claude plugin marketplace add GhalebDweikat/winnow
-claude plugin install winnow@winnow
-```
-
-**From a local clone** (what you want while developing):
+Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer.
 
 ```bash
 git clone https://github.com/GhalebDweikat/winnow.git
@@ -52,21 +43,36 @@ claude plugin marketplace add ./winnow
 claude plugin install winnow@winnow
 ```
 
-After pulling changes, run `claude plugin update winnow@winnow`; installed plugins are copied, not linked. For a hot-reload loop instead, load the checkout directly for one session:
+Then add a key (next section), open a new Claude Code session, and read any file longer than about 1,500 characters. If a `[winnow]` line appears in the result, it's working. If not, see [Troubleshooting](#troubleshooting).
+
+Before you have any key, you can still see what it does:
+
+```bash
+uv run --project winnow/sidecar winnow demo --fake
+```
+
+That runs a synthetic 130-line file through the real pipeline with a keyword judge and prints what Claude would have seen. Once a key is set, drop `--fake` and the same command makes the first real judge call.
+
+The repo is its own plugin marketplace, so it also installs straight from GitHub once it's public:
+
+```bash
+claude plugin marketplace add GhalebDweikat/winnow
+claude plugin install winnow@winnow
+```
+
+Installing applies everywhere that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions. New sessions pick the plugin up; running sessions don't. The first session after install runs `uv sync` in the sidecar, which takes a few seconds once.
+
+Installed plugins are copied to `~/.claude/plugins/cache/`, not linked, so after pulling changes run `claude plugin update winnow@winnow`. For a hot-reload loop while developing, load the checkout for one session instead:
 
 ```bash
 claude --plugin-dir ./winnow
 ```
 
-To scope the plugin to one project rather than your whole account, add `--scope project` to the `marketplace add` command; that writes it into that project's `.claude/settings.json`.
-
-Turn it off without uninstalling: `claude plugin disable winnow@winnow`.
-
-The first hook invocation runs `uv sync` in `sidecar/`, which takes a few seconds once. Until you set a judge key (below), every hook passes the tool result through untouched and logs the reason in `~/.winnow/errors.log`.
+To scope the plugin to one project rather than your whole account, add `--scope project` to the `marketplace add` command.
 
 ## Add your keys
 
-winnow needs one key for the judge and, optionally, one for summaries. Nothing runs until at least the judge key is in place; until then every hook passes results through untouched.
+winnow needs one key for the judge and, optionally, one for summaries. Nothing runs until at least the judge key is in place; until then every hook passes results through untouched and, once per session, tells you so.
 
 **1. Get a Jev key.** Jev is in early access. Join the waitlist at [typesafe.ai](https://typesafe.ai), and once you're admitted create a key at [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys). No key yet? Skip to step 3.
 
@@ -87,28 +93,62 @@ winnow needs one key for the judge and, optionally, one for summaries. Nothing r
 
 A variable already in the environment wins over the file, so a plain shell export still works for CLI use.
 
-**3. No Jev key yet? Use the adapter.** Add `WINNOW_JUDGE=adapter` to the same file. The adapter sends the identical request to Claude Haiku 4.5 through your Anthropic credentials (`ANTHROPIC_API_KEY`, or an `ant auth login` profile). Its probabilities are not calibrated, but the whole pipeline works, and switching to Jev later is one line.
+**3. No Jev key yet? Use the adapter.** Add `WINNOW_JUDGE=adapter` to the same file. The adapter sends the identical request to Claude Haiku 4.5 through your Anthropic credentials (`ANTHROPIC_API_KEY`, or a profile from the `ant` CLI's `ant auth login`). Its probabilities are not calibrated, but the whole pipeline works, and switching to Jev later is one line. This path bills your Anthropic account; see [cost](#what-leaves-your-machine-and-what-it-costs).
 
 **4. Verify.**
 
 ```bash
-uv run --project sidecar winnow doctor
+uv run --project winnow/sidecar winnow doctor
 ```
 
-It prints which keys were found, where they came from, and whether each backend initializes.
+It prints which keys were found, where they came from, and whether each backend initializes. Then `winnow demo` (without `--fake`) makes one real judge call and shows the result.
 
 Summaries use the Anthropic credentials. Set `WINNOW_SUMMARY=0` to turn them off; stubs then say "Summary unavailable" and everything else still works.
 
+### Running `winnow` commands
+
+From the clone, every command is `uv run --project winnow/sidecar winnow <command>`. To have `winnow` on your PATH anywhere:
+
+```bash
+uv tool install ./winnow/sidecar
+winnow doctor
+```
+
+Commands: `doctor`, `demo [--fake]`, `stats`, `recall <key> [--start N --end M]`, `mcp`, `hook <event>` (what Claude Code runs).
+
+## What leaves your machine, and what it costs
+
+winnow's job is reading everything Claude reads, so be clear about where it goes.
+
+| Data | Sent to | When |
+|---|---|---|
+| The tool output being judged, in blocks, plus a short task description from the transcript (last user request, last assistant sentence) and the tool's arguments | TypeSafe (judge `typesafe`) or Anthropic (judge `adapter`) | every judged result over `WINNOW_MIN_CHARS` |
+| The hidden blocks only | Anthropic | when summaries are on and something was hidden |
+| Your prompt and the first 600 characters of each candidate memory file | the judge | every prompt, when candidate files exist |
+
+Nothing is sent when the judge is `off`, and nothing is sent for outputs under the size threshold. The full text of every hidden output is kept locally in `~/.winnow/cache/` for recall; there is no eviction yet, so clear it when you like.
+
+Approximate cost per judged result, for a 10,000-token output:
+
+| Judge | Judge call | Summaries (up to 4, Haiku 4.5) | Total |
+|---|---|---|---|
+| Jev at $0.042 per million input tokens | $0.0004 | about $0.005 | under a cent |
+| Adapter on Haiku 4.5 at $1 per million input tokens | about $0.01 | about $0.005 | a few cents |
+
+`winnow stats` reports the judge's actual token usage and cost after the fact.
+
 ## Configuration
 
-All settings are environment variables. Defaults are deliberately conservative.
+All settings are environment variables (or lines in `~/.winnow/env`). Defaults are deliberately conservative.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `WINNOW_JUDGE` | `typesafe` | `typesafe`, `adapter`, or `off` |
 | `WINNOW_MODEL` | `jev-latest` | Jev model id |
+| `WINNOW_JUDGE_TIMEOUT` | `15` | Seconds per judge call, including one retry |
+| `WINNOW_ADAPTER_PROVIDER` | `anthropic` | Provider behind the adapter (`anthropic` or `openai`) |
 | `WINNOW_ADAPTER_MODEL` | `claude-haiku-4-5` | Model behind the adapter |
-| `WINNOW_TOOLS` | `Read,Bash,Grep` | Tools whose output is judged |
+| `WINNOW_TOOLS` | `Read,Bash,Grep` | Tools whose output is judged. This can only narrow the set; the hook itself fires for `Read|Bash|Grep` as written in `hooks/hooks.json`, so to add a tool edit that matcher too |
 | `WINNOW_MIN_CHARS` | `1500` | Outputs shorter than this are never touched |
 | `WINNOW_DROP` | `0.3` | Hide a block only when P(needed) is below this |
 | `WINNOW_KEEP` | `0.5` | Error-gate threshold; also the line between "confident keep" and "uncertain keep" |
@@ -118,31 +158,59 @@ All settings are environment variables. Defaults are deliberately conservative.
 | `WINNOW_MAX_STATE_CHARS` | `120000` | Blocks beyond this budget are kept unjudged |
 | `WINNOW_SUMMARY` | `1` | Summarize hidden groups |
 | `WINNOW_SUMMARY_MODEL` | `claude-haiku-4-5` | Summarizer model |
-| `WINNOW_CONTEXT_DIRS` | | Extra directories of `.md` files for the prompt-time selector (`;`-separated on Windows) |
+| `WINNOW_SUMMARY_MAX_GROUPS` | `4` | Summarize at most this many hidden groups per result; the rest get "Summary unavailable" |
+| `WINNOW_SUMMARY_MAX_CHARS` | `20000` | Characters of a hidden group sent to the summarizer |
+| `WINNOW_CONTEXT_DIRS` | | Extra directories of `.md` files for the prompt-time selector. Path-separator delimited: `:` on macOS and Linux, `;` on Windows |
 | `WINNOW_CONTEXT_GATE` | `0.5` | Minimum P(relevant) to inject a file |
 | `WINNOW_CONTEXT_TOP_K` | `3` | Max files injected per prompt |
-| `WINNOW_HOME` | `~/.winnow` | Cache and decision log |
+| `WINNOW_CONTEXT_MAX_CHARS` | `8000` | Total injected characters (Claude Code caps hook output at 10,000) |
+| `WINNOW_CONTEXT_MAX_CANDIDATES` | `60` | Max files considered per prompt |
+| `WINNOW_HOME` | `~/.winnow` | Cache, decision log, env file |
 
 ## Measuring it
 
 ```bash
-uv run --project sidecar winnow stats
+winnow stats
 ```
 
-Reports outputs judged and rewritten, characters and estimated tokens saved, judge latency and cost, and the **regret rate**: the share of hidden outputs that Claude later asked to recall. Regret against `WINNOW_DROP` is the calibration curve for your own workload. Every decision, with per-block probabilities, is in `~/.winnow/decisions.jsonl`.
+Reports outputs judged and rewritten, characters and estimated tokens saved, judge latency and cost, and the **regret rate**: the share of hidden outputs that Claude later asked to recall. Regret against `WINNOW_DROP` is the calibration curve for your own workload. Every decision, with per-block probabilities, is one line in `~/.winnow/decisions.jsonl`; demo runs are logged but excluded from stats.
 
 Recall from the shell:
 
 ```bash
-uv run --project sidecar winnow recall a1b2c3d4e5f6 --start 41 --end 188
+winnow recall a1b2c3d4e5f6 --start 41 --end 188
 ```
+
+## Troubleshooting
+
+Working and silently disabled look the same from inside a session, so check in this order.
+
+1. **Is the plugin enabled?** `claude plugin list` should show `winnow@winnow` as enabled. Enable with `claude plugin enable winnow@winnow` and start a new session.
+2. **Can the judge start?** `winnow doctor`. The common failure is a missing key, or a key set in a terminal that the desktop app never sees. When the judge can't start, winnow also posts one message per session saying so.
+3. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered. No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
+4. **Everything passes through with `judge_error`.** Read `~/.winnow/errors.log`; it has the traceback. Timeouts show up as `TypeSafeAPITimeoutError`; raise `WINNOW_JUDGE_TIMEOUT` or lower `WINNOW_MAX_STATE_CHARS`.
+5. **Stubs appear but nothing is summarized.** Summaries need Anthropic credentials. `winnow doctor` shows whether they were found.
+
+## Uninstall
+
+```bash
+claude plugin uninstall winnow@winnow
+claude plugin marketplace remove winnow
+```
+
+Then delete `~/.winnow` (cache, decision log, and your env file) if you don't want it kept.
+
+## Windows notes
+
+Claude Code runs hooks under Git Bash when it is installed, otherwise PowerShell; winnow's hook commands work in both. Paths from Claude Code arrive with backslashes, which winnow handles. The env file lives at `%USERPROFILE%\.winnow\env`. `WINNOW_CONTEXT_DIRS` uses `;` between directories. `uv` installs with `winget install astral-sh.uv` or from [astral.sh](https://docs.astral.sh/uv/getting-started/installation/).
 
 ## Layout
 
 ```
 winnow/
 ├── .claude-plugin/plugin.json   plugin manifest
-├── hooks/hooks.json             PostToolUse + UserPromptSubmit → sidecar CLI
+├── .claude-plugin/marketplace.json  makes the repo installable as a marketplace
+├── hooks/hooks.json             SessionStart (uv sync), PostToolUse, UserPromptSubmit → sidecar CLI
 ├── .mcp.json                    winnow_recall / winnow_stats MCP server
 ├── skills/winnow/SKILL.md       teaches Claude what a stub means
 ├── sidecar/                     Python package (uv project)
@@ -151,9 +219,10 @@ winnow/
 │   │   ├── judge.py             Jev / adapter backends, one interface
 │   │   ├── transcript.py        derive "current task" from the session transcript
 │   │   ├── extract.py           tool_response → text → tool_response
-│   │   ├── chunk.py  policy.py  stub.py  summarize.py  cache.py  log.py  memory.py
+│   │   ├── demo.py              winnow demo
+│   │   ├── chunk.py  policy.py  stub.py  summarize.py  cache.py  log.py  memory.py  config.py
 │   │   ├── mcp_server.py        recall server
-│   │   └── cli.py               winnow hook | recall | stats | mcp | doctor
+│   │   └── cli.py               winnow hook | demo | doctor | stats | recall | mcp
 │   └── tests/
 └── docs/DESIGN.md               decisions, limits, roadmap
 ```
@@ -161,23 +230,16 @@ winnow/
 ## Development
 
 ```bash
-cd sidecar
+cd winnow/sidecar
 uv sync
 uv run pytest
 ```
 
 Tests run with the judge off and a fake judge, so they need no keys and no network.
 
-Exercise a hook by hand:
-
-```bash
-echo '{"tool_name":"Bash","session_id":"s","tool_use_id":"t","tool_input":{"command":"ls"},"tool_response":{"stdout":"...","stderr":"","interrupted":false,"isImage":false}}' \
-  | WINNOW_JUDGE=adapter uv run --project sidecar winnow hook post-tool-use
-```
-
 ## Roadmap
 
-See [docs/DESIGN.md](docs/DESIGN.md). In short: read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, a resident sidecar for lower latency, and a published regret-versus-threshold curve on real sessions.
+See [docs/DESIGN.md](docs/DESIGN.md). In short: read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, a resident sidecar for lower latency, cache eviction, and a published regret-versus-threshold curve on real sessions.
 
 ## License
 

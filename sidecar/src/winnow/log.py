@@ -62,6 +62,8 @@ def stats(cfg: Config) -> dict[str, Any]:
     reasons: dict[str, int] = {}
 
     for event in read_events(cfg):
+        if event.get("demo"):
+            continue
         kind = event.get("event")
         if kind == "post_tool_use":
             judged += 1
