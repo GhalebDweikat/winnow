@@ -53,9 +53,17 @@ Question phrasing moves the curve. With criteria written as `what` / `not_for` /
 - Latency is not the problem: 86 ms per judged result in replay, and the plugin's resident sidecar takes hook overhead from 381 ms to 16 ms.
 - The weak label is useful for ordering judges and useless for absolute regret. Hand labels are needed for the number people will quote.
 
+## Two audits
+
+The 97 hand labels were produced by a model (Claude), so they were audited two ways.
+
+A 20-block human audit of the same blind sample disagreed with the model labels, with the weak label, and with Jev's ordering alike: 38% agreement. The cause was not the labels alone. The audit criterion was underspecified, and "Claude had to look at it to learn it was irrelevant" counts every block as needed, which no context-pruning tool can be measured against. The labeling sheet now states the criterion, and the next audit will show what the agent did next, since a human judging ground truth may use hindsight even though the judge cannot.
+
+The second audit is the one that matters for a user: the plugin ran in active mode at the 0.1 threshold, and the developer reviewed the resulting stubs from live sessions while they were fresh, seeing exactly what was hidden. Six of six genuine stubs were judged fine to hide; every hidden block had been scored at or below 0.10. Six is not many. It is the first human regret number, and it agrees with the hand-label calibration table.
+
 ## Caveats
 
-One developer's transcripts, heavily Python and Markdown. 97 hand labels, produced by a model rather than a person, with a human audit of 20 pending. Stratified sampling means the aggregate hand-label numbers are not population estimates; only the per-bin rates are. Blocks are 25 lines and boundaries are arbitrary.
+One developer's transcripts, heavily Python and Markdown. 97 model-produced hand labels; the human audits above are small. Stratified sampling means the aggregate hand-label numbers are not population estimates; only the per-bin rates are. Blocks are 25 lines and boundaries are arbitrary.
 
 ## Reproduce
 
