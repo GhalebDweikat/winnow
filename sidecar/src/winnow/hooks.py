@@ -21,7 +21,7 @@ from winnow.extract import extract, trimmed_input
 from winnow.judge import Judge, build_judge
 from winnow.memory import load_candidates
 from winnow.policy import decide
-from winnow.stub import assemble, render_stub
+from winnow.stub import assemble, digest, render_stub
 from winnow.summarize import Summarizer, build_summarizer
 from winnow.transcript import Task, read_task
 
@@ -163,6 +163,8 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
             "session_id": session_id,
             "tool_use_id": tool_use_id,
             "line_offset": extracted.line_offset,
+            "task": task.as_state(),
+            "questions": cfg.questions,
             "text": extracted.text,
             "blocks": [
                 {"id": b.id, "start": b.start, "end": b.end, "p": result.probabilities.get(b.id), "hidden": b in verdict.pruned}
@@ -175,7 +177,12 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
         # Everything up to here ran for real; only the rewrite is withheld.
         preview_stubs = {
             group[0].index: render_stub(
-                group, key, None, max((result.probabilities.get(b.id, 0.0) for b in group), default=0.0), extracted.line_offset
+                group,
+                key,
+                None,
+                max((result.probabilities.get(b.id, 0.0) for b in group), default=0.0),
+                extracted.line_offset,
+                digest_text=digest(tool_name, "\n".join(b.text for b in group)),
             )
             for group in group_contiguous(verdict.pruned)
         }
@@ -208,7 +215,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
                 log.log_error(cfg, "summarizer", exc)
             summary_ms += int((time.perf_counter() - started) * 1000)
         max_p = max((result.probabilities.get(b.id, 0.0) for b in group), default=0.0)
-        stubs[group[0].index] = render_stub(group, key, summary, max_p, extracted.line_offset)
+        stubs[group[0].index] = render_stub(group, key, summary, max_p, extracted.line_offset, digest_text=digest(tool_name, text))
 
     new_text = assemble(blocks, verdict, stubs)
     log.log_event(

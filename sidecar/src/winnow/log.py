@@ -97,7 +97,10 @@ def stats(cfg: Config) -> dict[str, Any]:
 
     saved = max(0, chars_before - chars_after)
     regret = len(recalled_keys & pruned_keys) / len(pruned_keys) if pruned_keys else 0.0
+    from winnow.review import review_stats
+
     return {
+        **review_stats(cfg),
         "outputs_judged": judged,
         "outputs_rewritten": rewritten,
         "outputs_passed_through": passthrough,

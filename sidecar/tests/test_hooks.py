@@ -94,7 +94,7 @@ def test_read_stub_uses_file_line_numbers(cfg, fake_judge_cls):
     out = post_tool_use(payload, Runtime(cfg, judge, None))
     content = out["hookSpecificOutput"]["updatedToolOutput"]["file"]["content"]
     assert "[winnow] Lines 225-274 (50 lines) hidden" in content
-    assert "[winnow] Summary unavailable." in content
+    assert "[winnow] Hidden content: 50 lines, starting: line 26" in content  # digest stands in for a summary
 
 
 def test_user_prompt_submit_injects_only_relevant_files(cfg, fake_judge_cls, tmp_path, monkeypatch):

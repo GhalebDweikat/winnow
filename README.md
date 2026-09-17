@@ -29,6 +29,8 @@ A stub looks like this:
 [winnow] Full text cached as key a1b2c3d4e5f6. Call winnow_recall(key="a1b2c3d4e5f6", start=41, end=188) if you need it.
 ```
 
+Without a summarizer the middle line is a deterministic digest instead, so Claude still knows what kind of thing it lost: for a search result, which files the hidden matches came from and how many each; for anything else, the line count, whether it was mostly comments, imports or repetition, and the first line.
+
 Two safety rules are built in. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `WINNOW_DROP` and `WINNOW_KEEP`), it is kept. Both thresholds are tunable; the rules themselves are not optional. The default `WINNOW_DROP` of 0.1 is the bin that came back clean on hand-labeled replay (see [Measured](#measured)); raise it only with your own evidence.
 
 The hooks talk to a small resident server (`winnow serve`) on loopback, started at session start, so a hook costs about 16 ms plus the judge call rather than a Python startup. winnow never judges its own files or its own commands, so recalls and labeling sheets always come back whole.
@@ -260,7 +262,13 @@ winnow clean          # drop cache entries older than 30 days, then trim to 200 
 winnow stats
 ```
 
-Reports outputs judged and rewritten, characters and estimated tokens saved, judge latency and cost, and the **regret rate**: the share of hidden outputs that Claude later asked to recall. Regret against `WINNOW_DROP` is the calibration curve for your own workload. Every decision, with per-block probabilities, is one line in `~/.winnow/decisions.jsonl`; demo runs are logged but excluded from stats.
+Reports outputs judged and rewritten, characters and estimated tokens saved, judge latency and cost, and the **regret rate**: the share of hidden outputs that Claude later asked to recall.
+
+The better regret number comes from you. `winnow review` walks the stubs from your recent sessions, newest first, shows exactly what was hidden and what the task was, and asks one question per stub: was hiding that fine? Ten of these while the session is still fresh in your head are worth more than a hundred labels on old transcripts, and `winnow stats` reports the result as human regret.
+
+```bash
+winnow review --limit 10          # y fine, x should have been kept, u unsure
+``` Regret against `WINNOW_DROP` is the calibration curve for your own workload. Every decision, with per-block probabilities, is one line in `~/.winnow/decisions.jsonl`; demo runs are logged but excluded from stats.
 
 Recall from the shell:
 

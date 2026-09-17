@@ -296,6 +296,13 @@ def main(argv: list[str] | None = None) -> int:
     clean.add_argument("--max-mb", type=float, default=200)
     clean.add_argument("--dry-run", action="store_true")
 
+    review = sub.add_parser("review", help="judge recent stubs from your own sessions: was hiding that fine?")
+    review.add_argument("--limit", type=int, default=10)
+    review.add_argument("--reviewer", default=os.environ.get("USERNAME") or os.environ.get("USER") or "human")
+    review.add_argument("--since-days", type=float, default=7)
+    review.add_argument("--session", help="only stubs from this session id")
+    review.add_argument("--max-lines", type=int, default=40, help="lines of hidden text to show per group")
+
     replay = sub.add_parser("replay", help="score a judge against your own Claude Code transcripts")
     replay_sub = replay.add_subparsers(dest="replay_command", required=True)
     rp_extract = replay_sub.add_parser("extract", help="transcripts -> cases.jsonl (offline)")
@@ -372,6 +379,11 @@ def main(argv: list[str] | None = None) -> int:
         result = cache.clean(Config.from_env(), older_than_days=args.older_than_days, max_mb=args.max_mb, dry_run=args.dry_run)
         for name, value in result.items():
             print(f"{name:32} {value}")
+        return 0
+    if args.command == "review":
+        from winnow.review import run_review
+
+        run_review(Config.from_env(), limit=args.limit, reviewer=args.reviewer, since_days=args.since_days, session=args.session, max_lines=args.max_lines)
         return 0
     if args.command == "replay":
         return run_replay_command(args)
