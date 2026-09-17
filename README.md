@@ -228,7 +228,7 @@ Working and silently disabled look the same from inside a session, so check in t
 
 1. **Is the plugin enabled?** `claude plugin list` should show `winnow@winnow` as enabled. Enable with `claude plugin enable winnow@winnow` and start a new session.
 2. **Can the judge start?** `winnow doctor`. The common failure is a missing key, or a key set in a terminal that the desktop app never sees. When the judge can't start, winnow also posts one message per session saying so.
-3. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered. No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
+3. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered; `"below_min_prune_ratio"` means it would have hidden less than `WINNOW_MIN_PRUNE_RATIO` of the text, so the rewrite was skipped (the usual outcome on ordinary source files at a conservative `WINNOW_DROP`). No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
 4. **Everything passes through with `judge_error`.** Read `~/.winnow/errors.log`; it has the traceback. Timeouts show up as `TypeSafeAPITimeoutError`; raise `WINNOW_JUDGE_TIMEOUT` or lower `WINNOW_MAX_STATE_CHARS`.
 5. **Stubs appear but nothing is summarized.** Summaries need Anthropic credentials. `winnow doctor` shows whether they were found.
 

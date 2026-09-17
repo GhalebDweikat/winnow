@@ -20,7 +20,7 @@ winnow sits between Claude Code's tools and your context. After `Read`, `Bash`, 
 - The summary is written by a cheap model and preserves identifiers, paths, numbers and error text. Trust it for orientation, not for exact values.
 - If the hidden lines might matter after all, call the `winnow_recall` tool with the key. Add `start` and `end` to fetch only part of the cached text. Do not re-run the original command just to see the hidden part; recall is cheaper and does not re-trigger side effects.
 - Outputs that show an error are never pruned. If you see a stub, the judge believed the output was clean.
-- Line numbers in a stub refer to the tool output as it was returned, so for `Read` they match the file's line numbers when the read started at line 1.
+- Line numbers in a stub refer to the original file or output. Claude Code renumbers the rewritten result from 1, so the numbers you see in the margin of a pruned `Read` do not match the file; use the stub's range with `Read` `offset`/`limit` or `winnow_recall` to reach the original lines. `Edit` is unaffected because it matches on text, not line numbers.
 
 ## Tools
 
