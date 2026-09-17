@@ -6,9 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv sync -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\"",
+            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow serve --ensure",
             "timeout": 600,
-            "statusMessage": "winnow: preparing sidecar environment"
+            "statusMessage": "winnow: starting sidecar"
           }
         ]
       }
@@ -18,8 +18,8 @@
         "matcher": "Read|Bash|Grep",
         "hooks": [
           {
-            "type": "command",
-            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow hook post-tool-use",
+            "type": "http",
+            "url": "http://127.0.0.1:47311/hook/post-tool-use",
             "timeout": 60,
             "statusMessage": "winnow: judging tool output"
           }
@@ -30,8 +30,8 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow hook user-prompt-submit",
+            "type": "http",
+            "url": "http://127.0.0.1:47311/hook/user-prompt-submit",
             "timeout": 30,
             "statusMessage": "winnow: selecting context"
           }

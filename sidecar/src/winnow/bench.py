@@ -55,7 +55,23 @@ def _fmt(label: str, r: dict[str, Any]) -> str:
     return f"  {label:<44} {r['median_ms']:>5} / {r['min_ms']:>5} / {r['max_ms']:>5}"
 
 
-def run_bench(runs: int = 10, skip_uv: bool = False) -> int:
+def _timed_http(url: str, runs: int, body: bytes) -> dict[str, Any]:
+    from urllib.error import URLError
+    from urllib.request import Request, urlopen
+
+    times: list[float] = []
+    for _ in range(runs):
+        started = time.perf_counter()
+        try:
+            with urlopen(Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST"), timeout=30):
+                pass
+        except (URLError, OSError) as exc:
+            return {"error": str(exc)[:200]}
+        times.append((time.perf_counter() - started) * 1000)
+    return {"median_ms": round(statistics.median(times)), "min_ms": round(min(times)), "max_ms": round(max(times))}
+
+
+def run_bench(runs: int = 10, skip_uv: bool = False, http: bool = False) -> int:
     env = {**os.environ, "WINNOW_JUDGE": "off", "WINNOW_SUMMARY": "0"}
     py = sys.executable
     uv = None if skip_uv else shutil.which("uv")
@@ -71,12 +87,19 @@ def run_bench(runs: int = 10, skip_uv: bool = False) -> int:
     if fast_uv is not None:
         print(_fmt("small result via uv run (what Claude Code runs)", fast_uv))
     print(_fmt("interpreter + import typesafe_sdk", sdk))
+    if http:
+        from winnow import serve as serve_mod
+
+        port = int(os.environ.get("WINNOW_PORT") or serve_mod.DEFAULT_PORT)
+        if serve_mod.health(port) is None:
+            print(_fmt("small result via resident sidecar (http hook)", {"error": f"no sidecar on port {port}; run `winnow serve --ensure`"}))
+        else:
+            print(_fmt("small result via resident sidecar (http hook)", _timed_http(f"http://127.0.0.1:{port}/hook/post-tool-use", runs, SMALL_PAYLOAD)))
 
     if all("error" not in r for r in (bare, fast_py, sdk)):
         sdk_cost = sdk["median_ms"] - bare["median_ms"]
         base = fast_uv["median_ms"] if fast_uv and "error" not in fast_uv else fast_py["median_ms"]
         print()
-        print(f"small results (under WINNOW_MIN_CHARS) pay about {base} ms.")
-        print(f"judged results pay about {base + sdk_cost} ms before the judge request goes out ({sdk_cost} ms is the SDK import).")
-        print("A resident sidecar (http hook) would cut both to a local round trip.")
+        print(f"via command hooks: small results pay about {base} ms; judged results about {base + sdk_cost} ms before the request leaves ({sdk_cost} ms is the SDK import).")
+        print("via the resident sidecar (the default hooks): both are a local round trip, and the judge's HTTP client stays warm.")
     return 0

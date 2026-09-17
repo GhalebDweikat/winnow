@@ -4,7 +4,8 @@ Everything has a conservative default so the hook is safe to install before a
 single knob is tuned. The two thresholds that matter most:
 
 - ``drop``: a block is hidden only when P(needed) is below this. Anything
-  between ``drop`` and ``keep`` is "uncertain" and is kept.
+  between ``drop`` and ``keep`` is "uncertain" and is kept. The default of
+  0.1 is where hand-labeled replay showed zero regret; see docs/DESIGN.md.
 - ``keep``: the confidence at which the error gate fires. If the judge thinks
   the output shows an error with probability >= ``keep``, nothing is hidden.
 """
@@ -107,6 +108,9 @@ class Config:
     adapter_provider: str
     adapter_model: str
     tools: tuple[str, ...]
+    questions: str
+    exclude_paths: tuple[Path, ...]
+    exclude_commands: str
     min_chars: int
     keep: float
     drop: float
@@ -135,9 +139,12 @@ class Config:
             adapter_provider=_str("WINNOW_ADAPTER_PROVIDER", "anthropic"),
             adapter_model=_str("WINNOW_ADAPTER_MODEL", "claude-haiku-4-5"),
             tools=tuple(t.strip() for t in _str("WINNOW_TOOLS", "Read,Bash,Grep").split(",") if t.strip()),
+            questions=_str("WINNOW_QUESTIONS", "structured").strip().lower(),
+            exclude_paths=_paths("WINNOW_EXCLUDE_PATHS") or (default_home(),),
+            exclude_commands=_str("WINNOW_EXCLUDE_COMMANDS", r"\bwinnow\b"),
             min_chars=_int("WINNOW_MIN_CHARS", 1500),
             keep=_float("WINNOW_KEEP", 0.5),
-            drop=_float("WINNOW_DROP", 0.3),
+            drop=_float("WINNOW_DROP", 0.1),
             block_lines=_int("WINNOW_BLOCK_LINES", 25),
             max_blocks=_int("WINNOW_MAX_BLOCKS", 200),
             max_state_chars=_int("WINNOW_MAX_STATE_CHARS", 120_000),

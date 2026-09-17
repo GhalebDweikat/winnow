@@ -318,17 +318,19 @@ def build_replay_judge(name: str, cfg: Config) -> Judge:
     raise ValueError(f"unknown judge {name!r}; expected lexical, typesafe, or adapter")
 
 
-def judge_case(case: Case, blocks: list[Block], judge: Judge, cfg: Config) -> JudgeResult:
+def judge_case(case: Case, blocks: list[Block], judge: Judge, cfg: Config, questions: str | None = None) -> JudgeResult:
     judged = _judge_window(blocks, cfg.max_state_chars)
     state = {
         "task": case.task,
         "tool": {"name": case.tool_name, "input": case.tool_input},
         "blocks": {b.id: b.text for b in judged},
     }
-    return judge.nouls(state, _block_questions(judged))
+    return judge.nouls(state, _block_questions(judged, questions or cfg.questions))
 
 
-def judge_cases(cases: Iterable[Case], judge: Judge, cfg: Config, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
+def judge_cases(
+    cases: Iterable[Case], judge: Judge, cfg: Config, *, limit: int | None = None, questions: str | None = None
+) -> Iterator[dict[str, Any]]:
     for index, case in enumerate(cases):
         if limit is not None and index >= limit:
             break
@@ -340,9 +342,10 @@ def judge_cases(cases: Iterable[Case], judge: Judge, cfg: Config, *, limit: int 
             "tool": case.tool_name,
             "task": case.task,
             "judge": judge.name,
+            "questions": questions or cfg.questions,
         }
         try:
-            result = judge_case(case, blocks, judge, cfg)
+            result = judge_case(case, blocks, judge, cfg, questions)
         except Exception as exc:  # noqa: BLE001 - keep going, record the failure
             record["error"] = repr(exc)
             yield record
@@ -374,18 +377,25 @@ def judge_cases(cases: Iterable[Case], judge: Judge, cfg: Config, *, limit: int 
 # --------------------------------------------------------------------------- #
 
 
-def score(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+def score(records: Iterable[dict[str, Any]], hand_labels: Mapping[tuple[str, str], str] | None = None) -> dict[str, Any]:
+    """Score judged records against the weak labels, or against ``hand_labels`` when given.
+
+    ``hand_labels`` maps (case_id, block_id) to needed / not_needed; only those
+    blocks are scored, using the hand label in place of the weak one.
+    """
     rows: list[tuple[float, str, int]] = []
     cases = errors = unknown_blocks = 0
     tokens = 0
     judges: Counter[str] = Counter()
     tools: Counter[str] = Counter()
     reasons: Counter[str] = Counter()
+    question_sets: Counter[str] = Counter()
     latencies: list[int] = []
     for record in records:
         cases += 1
         judges[str(record.get("judge", "?"))] += 1
         tools[str(record.get("tool", "?"))] += 1
+        question_sets[str(record.get("questions", "default"))] += 1
         if "error" in record:
             errors += 1
             continue
@@ -393,8 +403,12 @@ def score(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         if record.get("latency_ms") is not None:
             latencies.append(int(record["latency_ms"]))
         for block in record.get("blocks", []):
-            p, label = block.get("p"), block.get("label")
+            p = block.get("p")
             reasons[str(block.get("reason", "?"))] += 1
+            if hand_labels is not None:
+                label = hand_labels.get((str(record.get("case_id")), str(block.get("id"))))
+            else:
+                label = block.get("label")
             if p is None or label not in ("needed", "not_needed"):
                 unknown_blocks += 1
                 continue
@@ -434,6 +448,8 @@ def score(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "cases": cases,
         "cases_with_errors": errors,
         "judges": dict(judges),
+        "question_sets": dict(question_sets),
+        "label_source": "hand" if hand_labels is not None else "weak",
         "tools": dict(tools),
         "label_reasons": dict(reasons),
         "blocks_scored": len(rows),
@@ -454,7 +470,10 @@ def _pct(value: float | None, width: int = 6) -> str:
 
 def format_report(scored: dict[str, Any]) -> str:
     out = []
-    out.append("cases %d  (errors %d)   judges %s" % (scored["cases"], scored["cases_with_errors"], scored["judges"]))
+    out.append(
+        "cases %d  (errors %d)   judges %s   questions %s   labels: %s"
+        % (scored["cases"], scored["cases_with_errors"], scored["judges"], scored.get("question_sets"), scored.get("label_source", "weak"))
+    )
     out.append("tools %s   label reasons %s" % (scored.get("tools"), scored.get("label_reasons")))
     out.append(
         "blocks scored %d  unknown %d  needed fraction %s   ECE %s"
@@ -485,7 +504,10 @@ def format_report(scored: dict[str, Any]) -> str:
             out.append("  %s   %5d   %.3f    %.3f" % (b["bin"], b["n"], b["mean_p"], b["needed_rate"]))
     out.append("")
     out.append("regret = share of needed blocks a threshold would hide; hidden_precision = share of hidden blocks that were not needed.")
-    out.append("Labels are weak (see docs/DESIGN.md): treat regret as an upper bound.")
+    if scored.get("label_source", "weak") == "weak":
+        out.append("Labels are weak (see docs/DESIGN.md): treat regret as an upper bound.")
+    else:
+        out.append("Scored against hand labels on the sampled blocks only.")
     return "\n".join(out)
 
 

@@ -1,0 +1,30 @@
+{
+  "labelers": {
+    "claude": {
+      "n": 97,
+      "unsure": 3,
+      "weak_vs_hand": {
+        "weak=not_needed hand=not_needed": 40,
+        "weak=not_needed hand=needed": 20,
+        "weak=needed hand=needed": 27,
+        "weak=needed hand=not_needed": 10
+      },
+      "agreement_with_weak": 0.691,
+      "hand_needed_rate_by_bin": {
+        "low": {
+          "n": 47,
+          "needed_rate": 0.255
+        },
+        "mid": {
+          "n": 25,
+          "needed_rate": 0.6
+        },
+        "high": {
+          "n": 25,
+          "needed_rate": 0.8
+        }
+      }
+    }
+  },
+  "pairs": {}
+}

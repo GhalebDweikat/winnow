@@ -8,8 +8,10 @@ missing.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from winnow import cache, log
@@ -40,48 +42,44 @@ class Runtime:
 # PostToolUse: judge each block of a large tool result                        #
 # --------------------------------------------------------------------------- #
 
-BLOCK_CRITERIA = {
-    "true": (
-        "The block holds content the task depends on: matching code or text, results, "
-        "values the user asked for, definitions being edited, or anything referenced by the task."
-    ),
-    "false": (
-        "The block is boilerplate, unrelated to the task, repetitive noise, or something "
-        "the task does not depend on."
-    ),
-}
+def excluded(tool_name: str, tool_input: Any, cfg: Config) -> bool:
+    """winnow never judges its own files or its own commands.
+
+    Otherwise ``winnow recall`` output, replay samples, and label files would be
+    pruned while you are trying to read them.
+    """
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    if tool_name == "Read":
+        raw = str(tool_input.get("file_path") or "")
+        if raw:
+            try:
+                path = Path(raw).resolve()
+            except (OSError, ValueError):
+                return False
+            for base in cfg.exclude_paths:
+                try:
+                    path.relative_to(base.resolve())
+                    return True
+                except ValueError:
+                    continue
+    if tool_name == "Bash" and cfg.exclude_commands:
+        return re.search(cfg.exclude_commands, str(tool_input.get("command") or "")) is not None
+    return False
 
 
 def worth_judging(payload: dict[str, Any], cfg: Config) -> bool:
-    """Cheap pre-check that needs no SDK import: right tool, big enough output."""
+    """Cheap pre-check that needs no SDK import: right tool, not excluded, big enough output."""
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in cfg.tools:
+    if tool_name not in cfg.tools or excluded(tool_name, payload.get("tool_input"), cfg):
         return False
     extracted = extract(tool_name, payload.get("tool_input"), payload.get("tool_response", payload.get("tool_output")))
     return extracted is not None and len(extracted.text) >= cfg.min_chars
 
 
-def _block_questions(blocks: list[Block]) -> dict[str, Any]:
-    from typesafe_sdk import Noul  # imported here so small results never pay for the SDK
+def _block_questions(blocks: list[Block], name: str = "default") -> dict[str, Any]:
+    from winnow.questions import build_questions  # imports the SDK lazily
 
-    questions: dict[str, Any] = {
-        block.id: Noul(
-            instructions=f"Is `blocks.{block.id}` needed to accomplish `task`? Judge it against `task` and `tool`.",
-            criteria=BLOCK_CRITERIA,
-        )
-        for block in blocks
-    }
-    questions["error_present"] = Noul(
-        instructions=(
-            "Does the tool output (the whole of `blocks`) show an error, failure, warning, "
-            "or unexpected result that the assistant needs to know about?"
-        ),
-        criteria={
-            "true": "Tracebacks, non-zero exits, 'not found', permission errors, failing tests, or output that contradicts what `task` expected.",
-            "false": "Ordinary successful output.",
-        },
-    )
-    return questions
+    return build_questions(name, blocks)
 
 
 def _judge_window(blocks: list[Block], max_chars: int) -> list[Block]:
@@ -99,7 +97,7 @@ def _judge_window(blocks: list[Block], max_chars: int) -> list[Block]:
 def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] | None:
     cfg = runtime.cfg
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in cfg.tools or runtime.judge is None:
+    if tool_name not in cfg.tools or runtime.judge is None or excluded(tool_name, payload.get("tool_input"), cfg):
         return None
 
     tool_response = payload.get("tool_response", payload.get("tool_output"))
@@ -136,8 +134,9 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
         "judge": runtime.judge.name,
     }
 
+    event["questions"] = cfg.questions
     try:
-        result = runtime.judge.nouls(state, _block_questions(judged))
+        result = runtime.judge.nouls(state, _block_questions(judged, cfg.questions))
     except Exception as exc:  # noqa: BLE001 - any judge failure means pass through
         log.log_error(cfg, "judge", exc)
         log.log_event(cfg, {**event, "rewritten": False, "reason": "judge_error", "error": repr(exc)})

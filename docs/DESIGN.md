@@ -39,10 +39,10 @@ Questions reference the state by path, as TypeSafe recommends, so the model read
 | Probability | Decision |
 |---|---|
 | p >= keep (0.5) | keep |
-| drop (0.3) <= p < keep | keep, logged as uncertain |
+| drop (0.1) <= p < keep | keep, logged as uncertain |
 | p < drop | hide |
 
-Plus two gates: the error question (hide nothing if P(error) >= keep) and the minimum prune ratio (do not rewrite for a small saving). Start conservative, then move `drop` up as the regret rate stays low. On the first replay numbers below, `drop=0.2` is the conservative starting point for active mode, not 0.3.
+Plus two gates: the error question (hide nothing if P(error) >= keep) and the minimum prune ratio (do not rewrite for a small saving). Start conservative, then move `drop` up as the regret rate stays low. On the hand-labeled replay numbers below, `drop=0.1` is the default: it is the only bin that was clean.
 
 ## Regret as the metric
 
@@ -92,11 +92,43 @@ Jev's calibration table (mean predicted P(needed) vs observed rate under the wea
 Reading it honestly:
 
 - Jev is a real judge and the baseline is not; the ordering is right and the low bins are genuinely lower. That is the headline.
-- The observed rate never gets below 0.26 even where Jev says 0.07. Part of that is the weak label's known over-marking (the `ident` rule fires more than the `line` rule); part may be Jev spreading probability across the 0.2–0.6 range for this question. The two can be separated by hand-labeling a sample of the 0.0–0.2 bin.
-- The default `drop=0.3` is too aggressive for active mode on this evidence. `drop=0.2` hides about 10% of text at 8% regret; `drop=0.1` about 2% at 1.4%. Start there and move up as hand-checked regret stays low.
-- The question phrasing and the task state are the levers. This harness makes every change to `_block_questions` or `transcript.read_task` a one-command experiment costing a few cents.
+- The observed rate never gets below 0.26 even where Jev says 0.07. The hand labels below show that this is mostly the weak label's fault, not Jev's.
+- The question phrasing and the task state are the levers. This harness makes every change to the question set or to `transcript.read_task` a one-command experiment costing a few cents.
 
 Shadow mode cannot measure regret: nothing is hidden, so nothing is recalled. Live regret needs active mode at a conservative threshold plus the recall counter.
+
+### Hand labels: separating label noise from judge error
+
+`winnow replay sample` drew 100 blocks from the Jev-judged cases, stratified (50 from p < 0.2, 25 from 0.2–0.5, 25 from ≥ 0.5), shuffled, and written out blind. Claude (Fable 5.1, in this repo's own session) labeled them from the task and the block alone: 47 needed, 50 not needed, 3 unsure. A 20-block audit by the human owner is the next step; until then treat these as a strong model's opinion, not ground truth.
+
+Weak label vs hand label on the 97 decided blocks: agreement 69%. The disagreements go both ways: 20 blocks the weak label called *not needed* were needed (Claude used them without quoting them), and 10 it called *needed* were not (incidental identifier mentions). So the weak label both under- and over-marks, and its regret numbers are noisy in both directions rather than a clean upper bound.
+
+Jev's calibration against hand labels, default question set:
+
+| bin | n | mean p | needed rate |
+|---|---|---|---|
+| 0.0–0.1 | 10 | 0.07 | **0.00** |
+| 0.1–0.2 | 37 | 0.15 | 0.32 |
+| 0.2–0.3 | 9 | 0.24 | 0.44 |
+| 0.3–0.5 | 16 | 0.42 | 0.69 |
+| 0.5–0.7 | 18 | 0.57 | 0.72 |
+| 0.7–1.0 | 7 | 0.80 | 1.00 |
+
+Jev's most confident "no" bin is perfectly clean, and the ordering is right everywhere. Above 0.1 it is systematically *underconfident*: observed rates run 0.15–0.30 above the stated probability. That is a much better problem than the reverse, and it says the safe operating point is `drop=0.1`, not 0.2: the 0.1–0.2 bin is a third needed.
+
+### Question sets, measured
+
+Three phrasings of the per-block question, same 300 cases, same judge, scored on the hand labels at the operating point:
+
+| set | blocks p < 0.1 | needed among them | text hidden at 0.1 (population, weak label) | ECE (hand) |
+|---|---|---|---|---|
+| `default` (one-line criteria) | 10 | 0% | 1.8% | 0.18 |
+| `structured` (what / not_for / examples) | 23 | **0%** | **4.6%** | 0.26 |
+| `strict` ("directly about the task") | 35 | 23% | 10.9% | 0.28 |
+
+`structured` moves more than twice as much text below the safe threshold while keeping that bin clean; `strict` makes Jev overconfident and unsafe. `structured` is now the default (`WINNOW_QUESTIONS`). Its worse ECE is all in the middle bins, where it is even more underconfident, which does not matter for a 0.1 threshold. Raising the threshold safely means fixing that underconfidence, which is the next tuning target; candidates are richer task state (todo list, last edited file) and a Score over relevance levels.
+
+Expected live effect at `drop=0.1` with `structured`: about 5% of large-result text hidden, at zero hand-label regret. Modest, honest, and the number to beat.
 
 ## Latency, measured
 
@@ -109,7 +141,18 @@ Shadow mode cannot measure regret: nothing is hidden, so nothing is recalled. Li
 | small result via `uv run` (what Claude Code runs) | 374 ms |
 | interpreter + `import typesafe_sdk` | 566 ms |
 
-So a result under `WINNOW_MIN_CHARS` costs about 370 ms, and a judged result about 850 ms before the request leaves, of which about 470 ms is importing the SDK (mostly `httpx2` reading package metadata). The fast path exists because most tool results are small. The remaining fast-path cost is stdlib imports (`dataclasses`, `argparse`, `hashlib`, `pathlib`). A resident sidecar behind an `http` hook would reduce both to a local round trip and is the next latency step.
+So via command hooks a result under `WINNOW_MIN_CHARS` costs about 370 ms, and a judged result about 850 ms before the request leaves, of which about 470 ms is importing the SDK (mostly `httpx2` reading package metadata).
+
+### The resident sidecar
+
+`winnow serve` is a loopback HTTP server that keeps the SDK imported and the judge's HTTP client warm. Claude Code's `http` hooks POST the event JSON to it and read the hook output from the response body: an empty 2xx is pass-through, a JSON 2xx is the hook output, and a connection failure is a non-blocking error. The SessionStart hook runs `winnow serve --ensure`, which spawns a detached server if none answers (and replaces one from an older plugin version). The server re-reads `~/.winnow/env` when it changes, so a key or threshold edit takes effect without a restart, and exits after 45 idle minutes.
+
+| Path | Median |
+|---|---|
+| small result via `uv run` command hook | 381 ms |
+| small result via the sidecar | **16 ms** |
+
+Judged results also skip the ~500 ms SDK import, and TLS reuse takes the judge round trip itself from the 300–500 ms range down toward the 90 ms Jev shows in replay. If the sidecar is down, results pass through unjudged and Claude Code shows the hook error; `winnow doctor` and `winnow serve --status` both report it.
 
 ## Known limits
 
@@ -126,5 +169,7 @@ So a result under `WINNOW_MIN_CHARS` costs about 370 ms, and a judged result abo
 2. **Replay evaluation.** Done offline (`winnow replay`); publish regret vs. threshold once a real judge has been run over the cases.
 3. **Read narrowing (`PreToolUse` on `Read`).** For a large file, ask which regions answer the assistant's stated intent and rewrite the call with `offset`/`limit` via `updatedInput`. Riskier because intent is inferred; do it after the pruning data exists.
 4. **Done-ness gate (`Stop`).** A Noul (TypeSafe's yes/no question type, answered with a probability) over the transcript tail: is the task complete? The open question is what state the judge needs: the original request, the todo list, test output, and the final assistant message are the candidates. Decide after looking at real Stop payloads.
-5. **Resident sidecar.** Switch `hooks.json` to `http` hooks against a local server started by a `SessionStart` hook. Worth about 300 ms per small result and 800 ms per judged one on the numbers above.
+5. **Resident sidecar.** Done: `http` hooks against `winnow serve`, started by SessionStart. 381 ms → 16 ms per small result.
+7. **Bigger, human-audited label set.** 97 model-labeled blocks is enough to pick an operating point, not enough to publish a curve. Next: the owner audits 20, then a second 100-block draw from the middle bins where Jev is underconfident.
+8. **Live regret.** Active mode at `drop=0.1` with the recall counter is running; the first real regret number comes from a few days of sessions.
 6. **Vendor-neutral judge interface.** `judge.py` already has it. Add a fine-tuned encoder backend when one is worth comparing.

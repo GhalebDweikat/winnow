@@ -29,7 +29,9 @@ A stub looks like this:
 [winnow] Full text cached as key a1b2c3d4e5f6. Call winnow_recall(key="a1b2c3d4e5f6", start=41, end=188) if you need it.
 ```
 
-Two safety rules are built in. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `WINNOW_DROP` and `WINNOW_KEEP`), it is kept. Both thresholds are tunable; the rules themselves are not optional.
+Two safety rules are built in. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `WINNOW_DROP` and `WINNOW_KEEP`), it is kept. Both thresholds are tunable; the rules themselves are not optional. The default `WINNOW_DROP` of 0.1 is the bin that came back clean on hand-labeled replay (see [Measured](#measured)); raise it only with your own evidence.
+
+The hooks talk to a small resident server (`winnow serve`) on loopback, started at session start, so a hook costs about 16 ms plus the judge call rather than a Python startup. winnow never judges its own files or its own commands, so recalls and labeling sheets always come back whole.
 
 A second hook runs at prompt time. It ranks the memory files Claude Code keeps for the project (`~/.claude/projects/<project>/memory/*.md`, everything except the `MEMORY.md` index, which Claude already loads) plus any directories in `WINNOW_CONTEXT_DIRS` against your prompt, and injects the relevant ones so Claude reads what it needs without a round of `Read` calls.
 
@@ -62,7 +64,7 @@ claude plugin marketplace add GhalebDweikat/winnow
 claude plugin install winnow@winnow
 ```
 
-Installing applies everywhere that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions. New sessions pick the plugin up; running sessions don't. The first session after install runs `uv sync` in the sidecar, which takes a few seconds once.
+Installing applies everywhere that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions. New sessions pick the plugin up; running sessions don't. The first session after install syncs the sidecar's environment and starts the resident server, which takes a few seconds once; after that, sessions share the running server and start instantly.
 
 Installed plugins are copied to `~/.claude/plugins/cache/`, not linked, so after pulling changes run `claude plugin update winnow@winnow`. For a hot-reload loop while developing, load the checkout for one session instead:
 
@@ -116,7 +118,7 @@ uv tool install ./winnow/sidecar
 winnow doctor
 ```
 
-Commands: `doctor`, `demo [--fake]`, `stats`, `recall <key> [--start N --end M]`, `replay {extract,judge,score,run}`, `bench`, `clean`, `mcp`, `hook <event>` (what Claude Code runs).
+Commands: `doctor`, `demo [--fake]`, `stats`, `recall <key> [--start N --end M]`, `replay {extract,judge,score,run,sample,label,import-labels,agreement}`, `serve [--ensure|--status|--stop]`, `bench [--http]`, `clean`, `mcp`, `hook <event>`.
 
 ## What leaves your machine, and what it costs
 
@@ -152,8 +154,12 @@ All settings are environment variables (or lines in `~/.winnow/env`). Defaults a
 | `WINNOW_ADAPTER_PROVIDER` | `anthropic` | Provider behind the adapter (`anthropic` or `openai`) |
 | `WINNOW_ADAPTER_MODEL` | `claude-haiku-4-5` | Model behind the adapter |
 | `WINNOW_TOOLS` | `Read,Bash,Grep` | Tools whose output is judged. This can only narrow the set; the hook itself fires for `Read|Bash|Grep` as written in `hooks/hooks.json`, so to add a tool edit that matcher too |
+| `WINNOW_QUESTIONS` | `structured` | Question set the judge is asked with: `structured`, `default`, or `strict` |
+| `WINNOW_EXCLUDE_PATHS` | `WINNOW_HOME` | Reads under these directories are never judged (path-separator delimited) |
+| `WINNOW_EXCLUDE_COMMANDS` | `\bwinnow\b` | Bash commands matching this regex are never judged |
+| `WINNOW_PORT` | `47311` | Sidecar port; the URLs in `hooks/hooks.json` must match |
 | `WINNOW_MIN_CHARS` | `1500` | Outputs shorter than this are never touched |
-| `WINNOW_DROP` | `0.3` | Hide a block only when P(needed) is below this |
+| `WINNOW_DROP` | `0.1` | Hide a block only when P(needed) is below this |
 | `WINNOW_KEEP` | `0.5` | Error-gate threshold; also the line between "confident keep" and "uncertain keep" |
 | `WINNOW_MIN_PRUNE_RATIO` | `0.2` | Skip the rewrite unless at least this fraction of the text would be hidden |
 | `WINNOW_BLOCK_LINES` | `25` | Target lines per block |
@@ -199,12 +205,50 @@ winnow replay score --judged ~/.winnow/replay/judged-typesafe.jsonl
 
 Cases, judged files and scores live in `~/.winnow/replay/`. Nothing leaves the machine unless you pick a judge that calls an API.
 
-First results on 300 real cases (Jev vs the baseline, calibration table, what threshold to start with) are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/`.
+### Hand labels
 
-## Overhead and housekeeping
+Weak labels are good enough to rank judges and not good enough to trust a regret number. To get real labels, draw a blind sample and label it:
 
 ```bash
-winnow bench          # hook startup cost with the judge off; what every judged tool call pays
+winnow replay sample --judged ~/.winnow/replay/judged-typesafe.jsonl      # 100 blocks, stratified by judge probability
+winnow replay label --sample ~/.winnow/replay/sample.jsonl --labeler you   # interactive: y needed, x not needed, u unsure
+winnow replay agreement --sample ~/.winnow/replay/sample.jsonl             # weak vs you, labeler vs labeler
+winnow replay score --judged ~/.winnow/replay/judged-typesafe.jsonl --labels ~/.winnow/replay/labels.jsonl --labeler you
+```
+
+The sample also comes as a Markdown sheet (`sample.md`) if you would rather read it in an editor and import answers from a text file with `winnow replay import-labels`. A second labeler on a subset (`--limit 20 --seed 2`) gives an agreement number.
+
+### Question sets
+
+The words the judge is asked with matter. `WINNOW_QUESTIONS` selects a set, and `winnow replay judge --questions <name>` scores one against the same cases as any other:
+
+| set | what it is | result on hand labels |
+|---|---|---|
+| `structured` (default) | criteria as `what` / `not_for` / `examples` objects | clean below 0.1, hides ~5% of text there |
+| `default` | one-line criteria | clean below 0.1, hides ~2% |
+| `strict` | "directly about the task" | overconfident: 23% of its bottom bin was needed |
+
+### Measured
+
+First results on 300 real cases, 97 blind hand labels, three question sets and the sidecar's latency are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/` and a draft write-up in [docs/WRITEUP.md](docs/WRITEUP.md).
+
+## The resident sidecar
+
+The hooks are `http` hooks against `winnow serve` on `127.0.0.1:47311`. The SessionStart hook runs `winnow serve --ensure`, which starts a detached server if none is answering and replaces one left over from an older plugin version. The server keeps the SDK loaded and the judge's connection warm, re-reads `~/.winnow/env` whenever it changes, and exits after 45 idle minutes.
+
+```bash
+winnow serve --status   # is it up, how many requests, is the judge built
+winnow serve --stop
+winnow serve --ensure   # what SessionStart runs; prints nothing
+winnow bench --http     # 381 ms via a command hook, 16 ms via the sidecar, on the machine this was built on
+```
+
+If the server is down, results pass through unjudged and Claude Code shows the hook error; the next session start brings it back. Set `WINNOW_PORT` and edit the URLs in `hooks/hooks.json` together if the port is taken.
+
+## Housekeeping
+
+```bash
+winnow bench          # hook overhead with the judge off
 winnow clean          # drop cache entries older than 30 days, then trim to 200 MB
 ```
 
@@ -227,10 +271,12 @@ winnow recall a1b2c3d4e5f6 --start 41 --end 188
 Working and silently disabled look the same from inside a session, so check in this order.
 
 1. **Is the plugin enabled?** `claude plugin list` should show `winnow@winnow` as enabled. Enable with `claude plugin enable winnow@winnow` and start a new session.
-2. **Can the judge start?** `winnow doctor`. The common failure is a missing key, or a key set in a terminal that the desktop app never sees. When the judge can't start, winnow also posts one message per session saying so.
-3. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered; `"below_min_prune_ratio"` means it would have hidden less than `WINNOW_MIN_PRUNE_RATIO` of the text, so the rewrite was skipped (the usual outcome on ordinary source files at a conservative `WINNOW_DROP`). No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
-4. **Everything passes through with `judge_error`.** Read `~/.winnow/errors.log`; it has the traceback. Timeouts show up as `TypeSafeAPITimeoutError`; raise `WINNOW_JUDGE_TIMEOUT` or lower `WINNOW_MAX_STATE_CHARS`.
-5. **Stubs appear but nothing is summarized.** Summaries need Anthropic credentials. `winnow doctor` shows whether they were found.
+2. **Is the sidecar up?** `winnow serve --status`. If not, `winnow serve --ensure` starts it; the SessionStart hook does the same. Claude Code also shows a hook error on every judged call while it is down.
+3. **Can the judge start?** `winnow doctor`. The common failure is a missing key, or a key set in a terminal that the desktop app never sees. When the judge can't start, winnow also posts one message per session saying so.
+4. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered; `"below_min_prune_ratio"` means it would have hidden less than `WINNOW_MIN_PRUNE_RATIO` of the text, so the rewrite was skipped (the usual outcome on ordinary source files at a conservative `WINNOW_DROP`). No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
+5. **Everything passes through with `judge_error`.** Read `~/.winnow/errors.log`; it has the traceback. Timeouts show up as `TypeSafeAPITimeoutError`; raise `WINNOW_JUDGE_TIMEOUT` or lower `WINNOW_MAX_STATE_CHARS`.
+6. **Stubs appear but nothing is summarized.** Summaries need Anthropic credentials. `winnow doctor` shows whether they were found.
+7. **A file you need came back pruned.** Use the stub's key with `winnow_recall`, or read the range it names with `offset`/`limit`. To keep a directory out of winnow's reach entirely, add it to `WINNOW_EXCLUDE_PATHS`.
 
 ## Uninstall
 
@@ -251,7 +297,7 @@ Claude Code runs hooks under Git Bash when it is installed, otherwise PowerShell
 winnow/
 ├── .claude-plugin/plugin.json   plugin manifest
 ├── .claude-plugin/marketplace.json  makes the repo installable as a marketplace
-├── hooks/hooks.json             SessionStart (uv sync), PostToolUse, UserPromptSubmit → sidecar CLI
+├── hooks/hooks.json             SessionStart starts the sidecar; PostToolUse + UserPromptSubmit are http hooks to it
 ├── .mcp.json                    winnow_recall / winnow_stats MCP server
 ├── skills/winnow/SKILL.md       teaches Claude what a stub means
 ├── sidecar/                     Python package (uv project)
@@ -260,10 +306,13 @@ winnow/
 │   │   ├── judge.py             Jev / adapter backends, one interface
 │   │   ├── transcript.py        derive "current task" from the session transcript
 │   │   ├── extract.py           tool_response → text → tool_response
-│   │   ├── demo.py              winnow demo
+│   │   ├── serve.py             the resident sidecar (http hooks)
+│   │   ├── questions.py         question sets the judge is asked with
+│   │   ├── replay.py  labels.py  the offline benchmark and hand-labeling tools
+│   │   ├── demo.py  bench.py    winnow demo, winnow bench
 │   │   ├── chunk.py  policy.py  stub.py  summarize.py  cache.py  log.py  memory.py  config.py
 │   │   ├── mcp_server.py        recall server
-│   │   └── cli.py               winnow hook | demo | doctor | stats | recall | mcp
+│   │   └── cli.py               all commands
 │   └── tests/
 └── docs/DESIGN.md               decisions, limits, roadmap
 ```

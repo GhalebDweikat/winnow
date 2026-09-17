@@ -14,6 +14,7 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("WINNOW_JUDGE", "off")
     monkeypatch.setenv("WINNOW_SUMMARY", "0")
     monkeypatch.setenv("WINNOW_MIN_CHARS", "10")
+    monkeypatch.setenv("WINNOW_DROP", "0.3")  # the fixtures were written against this threshold; the shipped default is 0.1
     monkeypatch.delenv("WINNOW_CONTEXT_DIRS", raising=False)
     yield
 

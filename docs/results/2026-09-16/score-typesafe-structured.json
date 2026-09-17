@@ -1,0 +1,157 @@
+{
+  "cases": 300,
+  "cases_with_errors": 0,
+  "judges": {
+    "typesafe": 300
+  },
+  "question_sets": {
+    "structured": 300
+  },
+  "label_source": "weak",
+  "tools": {
+    "Bash": 131,
+    "Read": 150,
+    "Grep": 19
+  },
+  "label_reasons": {
+    "ident": 458,
+    "none": 786,
+    "line": 271,
+    "unknown": 7
+  },
+  "blocks_scored": 1515,
+  "blocks_unknown": 7,
+  "needed_fraction": 0.4812,
+  "judge_input_tokens": 1065771,
+  "est_cost_usd_at_jev_price": 0.044762,
+  "latency_ms_median": 94,
+  "thresholds": [
+    {
+      "threshold": 0.1,
+      "hidden_blocks": 85,
+      "hidden_fraction_chars": 0.0456,
+      "regret": 0.0261,
+      "hidden_precision": 0.7765
+    },
+    {
+      "threshold": 0.2,
+      "hidden_blocks": 363,
+      "hidden_fraction_chars": 0.1992,
+      "regret": 0.1879,
+      "hidden_precision": 0.6226
+    },
+    {
+      "threshold": 0.3,
+      "hidden_blocks": 650,
+      "hidden_fraction_chars": 0.3598,
+      "regret": 0.3676,
+      "hidden_precision": 0.5877
+    },
+    {
+      "threshold": 0.4,
+      "hidden_blocks": 873,
+      "hidden_fraction_chars": 0.4927,
+      "regret": 0.5213,
+      "hidden_precision": 0.5647
+    },
+    {
+      "threshold": 0.5,
+      "hidden_blocks": 1071,
+      "hidden_fraction_chars": 0.6186,
+      "regret": 0.6694,
+      "hidden_precision": 0.5444
+    },
+    {
+      "threshold": 0.6,
+      "hidden_blocks": 1231,
+      "hidden_fraction_chars": 0.7614,
+      "regret": 0.7997,
+      "hidden_precision": 0.5264
+    },
+    {
+      "threshold": 0.7,
+      "hidden_blocks": 1340,
+      "hidden_fraction_chars": 0.876,
+      "regret": 0.8779,
+      "hidden_precision": 0.5224
+    },
+    {
+      "threshold": 0.8,
+      "hidden_blocks": 1448,
+      "hidden_fraction_chars": 0.9463,
+      "regret": 0.9465,
+      "hidden_precision": 0.5235
+    },
+    {
+      "threshold": 0.9,
+      "hidden_blocks": 1510,
+      "hidden_fraction_chars": 0.995,
+      "regret": 0.9931,
+      "hidden_precision": 0.5205
+    }
+  ],
+  "calibration": [
+    {
+      "bin": "0.0-0.1",
+      "n": 85,
+      "mean_p": 0.073,
+      "needed_rate": 0.224
+    },
+    {
+      "bin": "0.1-0.2",
+      "n": 278,
+      "mean_p": 0.149,
+      "needed_rate": 0.424
+    },
+    {
+      "bin": "0.2-0.3",
+      "n": 287,
+      "mean_p": 0.243,
+      "needed_rate": 0.456
+    },
+    {
+      "bin": "0.3-0.4",
+      "n": 223,
+      "mean_p": 0.342,
+      "needed_rate": 0.502
+    },
+    {
+      "bin": "0.4-0.5",
+      "n": 198,
+      "mean_p": 0.447,
+      "needed_rate": 0.545
+    },
+    {
+      "bin": "0.5-0.6",
+      "n": 160,
+      "mean_p": 0.543,
+      "needed_rate": 0.594
+    },
+    {
+      "bin": "0.6-0.7",
+      "n": 109,
+      "mean_p": 0.642,
+      "needed_rate": 0.523
+    },
+    {
+      "bin": "0.7-0.8",
+      "n": 108,
+      "mean_p": 0.748,
+      "needed_rate": 0.463
+    },
+    {
+      "bin": "0.8-0.9",
+      "n": 62,
+      "mean_p": 0.835,
+      "needed_rate": 0.548
+    },
+    {
+      "bin": "0.9-1.0",
+      "n": 5,
+      "mean_p": 0.914,
+      "needed_rate": 1.0
+    }
+  ],
+  "ece": 0.182,
+  "note": "Same 300 cases; weak labels; see docs/DESIGN.md"
+}
