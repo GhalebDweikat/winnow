@@ -2,7 +2,7 @@
   "mcpServers": {
     "winnow": {
       "command": "uv",
-      "args": ["run", "-q", "--project", "${CLAUDE_PLUGIN_ROOT}/sidecar", "winnow", "mcp"]
+      "args": ["run", "-q", "--project", "${CLAUDE_PLUGIN_ROOT}/sidecar", "python", "-m", "winnow", "mcp"]
     }
   }
 }

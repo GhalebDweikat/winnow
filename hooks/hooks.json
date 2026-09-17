@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" winnow serve --ensure",
+            "command": "uv run -q --project \"${CLAUDE_PLUGIN_ROOT}/sidecar\" python -m winnow serve --ensure",
             "timeout": 600,
             "statusMessage": "winnow: starting sidecar"
           }

@@ -162,6 +162,7 @@ Judged results also skip the ~500 ms SDK import, and TLS reuse takes the judge r
 - **Jev limits are undocumented.** Context window and maximum questions per call are not published. `WINNOW_MAX_STATE_CHARS` and `WINNOW_MAX_BLOCKS` are guesses to tune.
 - **Windows.** Hooks run under Git Bash when present. Paths from Claude Code arrive with backslashes; nothing here assumes otherwise.
 - **The venv lives in `sidecar/.venv`.** A plugin's install directory changes on update; moving the environment to `${CLAUDE_PLUGIN_DATA}` would make it survive.
+- **Long-lived processes must not run through the `winnow.exe` launcher.** On Windows a console-script launcher holds its own executable open for as long as the script runs. The per-session MCP server and the sidecar therefore start as `python -m winnow ...`; otherwise the next version bump's editable rebuild fails with "file in use" and every `uv run` in that environment fails with it, hooks included. Found the hard way on 0.3.0.
 
 ## Roadmap
 
