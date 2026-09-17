@@ -57,12 +57,14 @@ uv run --project winnow/sidecar winnow demo --fake
 
 That runs a synthetic 130-line file through the real pipeline with a keyword judge and prints what Claude would have seen. Once a key is set, drop `--fake` and the same command makes the first real judge call.
 
-The repo is its own plugin marketplace, so it also installs straight from GitHub once it's public:
+The repo is its own plugin marketplace, so it also installs straight from GitHub without cloning:
 
 ```bash
 claude plugin marketplace add GhalebDweikat/winnow
 claude plugin install winnow@winnow
 ```
+
+GitHub shorthand clones over SSH by default; set `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` if you don't have an SSH key on this machine.
 
 Installing applies everywhere that shares your `~/.claude` config: the CLI, the desktop app, and IDE extensions. New sessions pick the plugin up; running sessions don't. The first session after install syncs the sidecar's environment and starts the resident server, which takes a few seconds once; after that, sessions share the running server and start instantly.
 
