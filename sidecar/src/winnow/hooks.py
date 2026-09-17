@@ -23,7 +23,7 @@ from winnow.memory import load_candidates
 from winnow.policy import decide
 from winnow.stub import assemble, digest, render_stub
 from winnow.summarize import Summarizer, build_summarizer
-from winnow.transcript import Task, read_task
+from winnow.transcript import Task, read_task, transcript_for
 
 
 @dataclass
@@ -109,7 +109,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
     if len(blocks) < 2:
         return None
 
-    task = read_task(payload.get("transcript_path"))
+    task = read_task(transcript_for(payload))
     judged = _judge_window(blocks, cfg.max_state_chars)
     state = {
         "task": task.as_state(),
@@ -125,6 +125,8 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
         "mode": cfg.mode,
         "session_id": session_id,
         "tool_use_id": tool_use_id,
+        "agent_id": payload.get("agent_id"),
+        "agent_type": payload.get("agent_type"),
         "tool": tool_name,
         "describe": extracted.describe,
         "n_blocks": len(blocks),
@@ -162,6 +164,8 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
             "describe": extracted.describe,
             "session_id": session_id,
             "tool_use_id": tool_use_id,
+            "agent_id": payload.get("agent_id"),
+            "agent_type": payload.get("agent_type"),
             "line_offset": extracted.line_offset,
             "task": task.as_state(),
             "questions": cfg.questions,

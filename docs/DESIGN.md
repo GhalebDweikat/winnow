@@ -34,6 +34,13 @@ Questions reference the state by path, as TypeSafe recommends, so the model read
 
 > Is `blocks.b007` needed to accomplish `task`? Judge it against `task` and `tool`.
 
+Two state bugs found by reviewing live stubs (17 Sep 2026), both fixed in 0.3.4:
+
+- **Subagent calls were judged against the orchestrator's task.** Inside a subagent the hook's `transcript_path` is the parent session's file, so "the last user message" was whatever the human last typed to the orchestrator (often a bare "1" or "done"). The judge now reads the subagent's own transcript at `<session>/subagents/agent-<id>.jsonl`, whose first user message is the delegation prompt.
+- **Long prompts were truncated from the wrong end.** A 1,500-character cap kept the *tail* of the user request, so a long delegation prompt arrived as its closing details with the ask cut off. User requests now keep their head; assistant intents keep their tail, which is where the next step is stated.
+
+Both affected every subagent-heavy session, which for this developer is most of them. The stubs reviewed before the fix were judged under worse conditions than the stubs that will follow.
+
 ## Thresholds
 
 | Probability | Decision |

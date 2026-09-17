@@ -57,6 +57,25 @@ def _has_tool_result(content: object) -> bool:
     return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
 
 
+def transcript_for(payload: dict) -> str | None:
+    """The transcript that describes the task behind a hook payload.
+
+    Inside a subagent the hook's ``transcript_path`` is the parent session's
+    file, whose last user message is whatever the human said to the
+    orchestrator. The subagent's own transcript, at
+    ``<session dir>/<session id>/subagents/agent-<agent id>.jsonl``, starts
+    with the delegation prompt, which is the task that tool call is serving.
+    """
+    path = payload.get("transcript_path")
+    agent_id = payload.get("agent_id")
+    session_id = payload.get("session_id")
+    if path and agent_id and session_id:
+        candidate = os.path.join(os.path.dirname(str(path)), str(session_id), "subagents", f"agent-{agent_id}.jsonl")
+        if os.path.exists(candidate):
+            return candidate
+    return str(path) if path else None
+
+
 def read_task(
     transcript_path: str | None,
     *,
@@ -92,4 +111,15 @@ def read_task(
             text = _text_of(content).strip()
             if text:
                 assistant = text
-    return Task(user[-max_chars:], assistant[-max_chars:])
+    # Keep the head of long messages: a delegation prompt says what to do in its first lines and
+    # ends in details; the same holds for a long user request. The tail of an assistant message
+    # is the more useful half, since that is where it says what it will do next.
+    return Task(_head(user, max_chars), _tail(assistant, max_chars))
+
+
+def _head(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _tail(text: str, limit: int) -> str:
+    return text if len(text) <= limit else "…" + text[-(limit - 1) :].lstrip()

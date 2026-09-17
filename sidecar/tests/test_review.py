@@ -9,14 +9,18 @@ def numbered(n: int) -> str:
     return "\n".join(f"line {i}" for i in range(1, n + 1))
 
 
-def make_stub(cfg, fake_judge_cls, tool_use_id="t1"):
+def make_stub(cfg, fake_judge_cls, tool_use_id="t1", text=None):
     judge = fake_judge_cls({"b001": 0.9, "b002": 0.0, "b003": 0.0, "b004": 0.9, "error_present": 0.0})
     payload = {
         "session_id": "sess-1", "tool_use_id": tool_use_id, "tool_name": "Bash",
         "tool_input": {"command": "cat big.log"},
-        "tool_response": {"stdout": numbered(100), "stderr": "", "interrupted": False, "isImage": False},
+        "tool_response": {"stdout": text or numbered(100), "stderr": "", "interrupted": False, "isImage": False},
     }
     assert post_tool_use(payload, Runtime(cfg, judge, None)) is not None
+
+
+def log_lines(n: int) -> str:
+    return "\n".join(f"line {i} of the big build log" for i in range(1, n + 1))
 
 
 def test_review_walks_recent_stubs_and_records_verdicts(cfg, fake_judge_cls):
@@ -41,6 +45,66 @@ def test_review_walks_recent_stubs_and_records_verdicts(cfg, fake_judge_cls):
     assert stats["human_reviewed"] == 2 and stats["human_should_have_kept"] == 1 and stats["human_regret_rate"] == 0.5
     # already reviewed stubs are not offered again
     assert review.candidates(cfg, limit=10, since_days=7) == []
+
+
+def test_review_shows_task_kept_regions_and_next_actions_from_the_transcript(cfg, fake_judge_cls, tmp_path, monkeypatch):
+    make_stub(cfg, fake_judge_cls, "t1", text=log_lines(100))  # session sess-1, Bash `cat big.log`, hides lines 26-75
+    # a transcript for that session: the user asked, Claude read the log, then edited using a hidden line
+    root = tmp_path / "projects"
+    (root / "C--proj").mkdir(parents=True)
+    entries = [
+        {"type": "custom-title", "customTitle": "Debug the flaky build"},
+        {"type": "user", "message": {"role": "user", "content": "why does the build log say line 30?"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Let me look at the log."}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "cat big.log"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "..."}]},
+         "toolUseResult": {"stdout": log_lines(100), "stderr": "", "interrupted": False, "isImage": False}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Found it on line 30 of the log."}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "build.py", "old_string": "line 30 of the big build log", "new_string": "line 30 fixed"}}]}},
+        {"type": "user", "message": {"role": "user", "content": "thanks"}},
+    ]
+    (root / "C--proj" / "sess-1.jsonl").write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+    monkeypatch.setenv("WINNOW_TRANSCRIPTS_ROOT", str(root))
+
+    printed = []
+    review.run_review(cfg, reviewer="tester", input_fn=lambda _: "x", print_fn=printed.append)
+    out = "\n".join(printed)
+    assert "session: Debug the flaky build" in out
+    assert "user asked:      why does the build log say line 30?" in out
+    assert "claude intended: Let me look at the log." in out
+    assert "Claude SAW 2 region(s), 50 lines:" in out and "lines 1-25: line 1 of" in out and "lines 76-100: line 76 of" in out
+    assert "Claude LOST 1 region(s), 50 lines:" in out and "--- hidden lines 26-75 ---" in out
+    assert "what Claude did next:" in out and "1. said: Found it on line 30 of the log." in out
+    assert "2. Edit build.py  replacing: line 30 of the big build log" in out
+    assert "automatic check: a later action reused a line from hidden lines 26-50" in out
+
+
+def test_review_follows_tool_calls_into_subagent_transcripts(cfg, fake_judge_cls, tmp_path, monkeypatch):
+    make_stub(cfg, fake_judge_cls, "t1")  # no agent_id recorded: the review must scan the subagent files
+    root = tmp_path / "projects"
+    sub = root / "C--proj" / "sess-1" / "subagents"
+    sub.mkdir(parents=True)
+    (root / "C--proj" / "sess-1.jsonl").write_text(json.dumps({"type": "custom-title", "customTitle": "Novel run"}) + "\n", encoding="utf-8")
+    entries = [
+        {"type": "user", "isSidechain": True, "agentId": "a1", "message": {"role": "user", "content": "Phase 20: review the world bible for load-bearing facts."}},
+        {"type": "assistant", "isSidechain": True, "agentId": "a1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Reading the log first."}]}},
+        {"type": "assistant", "isSidechain": True, "agentId": "a1", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "cat big.log"}}]}},
+        {"type": "user", "isSidechain": True, "agentId": "a1", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "..."}]},
+         "toolUseResult": {"stdout": numbered(100), "stderr": "", "interrupted": False, "isImage": False}},
+        {"type": "assistant", "isSidechain": True, "agentId": "a1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Nothing relevant in the log."}]}},
+    ]
+    (sub / "agent-a1.jsonl").write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+    (sub / "agent-a1.meta.json").write_text(json.dumps({"agentType": "world-review", "description": "World review v2"}), encoding="utf-8")
+    monkeypatch.setenv("WINNOW_TRANSCRIPTS_ROOT", str(root))
+
+    printed = []
+    review.run_review(cfg, reviewer="tester", input_fn=lambda _: "y", print_fn=printed.append)
+    out = "\n".join(printed)
+    assert "session: Novel run" in out
+    assert "run by subagent: world-review (World review v2)" in out
+    assert "user asked:      Phase 20: review the world bible" in out
+    assert "1. said: Nothing relevant in the log." in out
+    assert "automatic check: none of Claude's next 1 actions" in out
 
 
 def test_review_with_nothing_to_do(cfg):

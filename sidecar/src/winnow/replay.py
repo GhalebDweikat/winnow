@@ -42,7 +42,7 @@ from winnow.extract import extract, trimmed_input
 from winnow.hooks import _block_questions, _judge_window
 from winnow.judge import Judge, JudgeResult
 from winnow.log import JEV_USD_PER_MILLION_INPUT
-from winnow.transcript import _text_of
+from winnow.transcript import _head, _tail, _text_of
 
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{5,}")
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,}")
@@ -73,6 +73,7 @@ class Case:
     evidence: list[str] = field(default_factory=list)  # everything Claude produced next (line overlap)
     references: list[str] = field(default_factory=list)  # prose, commands, edit targets only (identifier mentions)
     evidence_events: int = 0
+    actions: list[str] = field(default_factory=list)  # one line per later assistant event, for humans
 
 
 DEFAULT_WINDOW = 12  # assistant events after the result that count as "used it"
@@ -116,7 +117,26 @@ def _tool_input_evidence(name: str, inp: dict[str, Any]) -> tuple[str, str]:
     return dumped, dumped
 
 
-def _append_evidence(cases: list[Case], line_text: str, ref_text: str, window: int) -> None:
+def _describe_action(name: str, inp: dict[str, Any]) -> str:
+    def short(value: Any, n: int = 90) -> str:
+        text = str(value).replace("\n", " ").strip()
+        return text if len(text) <= n else text[: n - 1] + "…"
+
+    if name in ("Edit", "MultiEdit"):
+        return f"Edit {short(inp.get('file_path', ''), 60)}  replacing: {short(inp.get('old_string', ''), 80)}"
+    if name == "Write":
+        return f"Write {short(inp.get('file_path', ''), 60)} ({len(str(inp.get('content', '')))} chars)"
+    if name == "Bash":
+        return f"Bash: {short(inp.get('command', ''))}"
+    if name == "Read":
+        extra = "".join(f" {k}={inp[k]}" for k in ("offset", "limit") if k in inp)
+        return f"Read {short(inp.get('file_path', ''), 70)}{extra}"
+    if name == "Grep":
+        return f"Grep {short(inp.get('pattern', ''), 40)} in {short(inp.get('path', '.'), 40)}"
+    return f"{name} {short(json.dumps(inp, ensure_ascii=False), 70)}"
+
+
+def _append_evidence(cases: list[Case], line_text: str, ref_text: str, window: int, action: str = "") -> None:
     for case in cases:
         if case.evidence_events >= window:
             continue
@@ -125,14 +145,26 @@ def _append_evidence(cases: list[Case], line_text: str, ref_text: str, window: i
             case.evidence.append(line_text)
         if ref_text:
             case.references.append(ref_text)
+        if action:
+            case.actions.append(action)
 
 
-def iter_cases(path: str | Path, *, tools: Iterable[str], min_chars: int, window: int = DEFAULT_WINDOW) -> Iterator[Case]:
+def iter_cases(
+    path: str | Path,
+    *,
+    tools: Iterable[str],
+    min_chars: int,
+    window: int = DEFAULT_WINDOW,
+    include_sidechain: bool = False,
+) -> Iterator[Case]:
     """Walk one transcript and yield every large tool result with its task and evidence.
 
     ``window`` bounds how many later assistant events (messages and tool calls)
     count as evidence, so a result is judged by what Claude did soon after
     reading it, not by everything in a long autonomous turn.
+
+    Subagent transcripts (``<session>/subagents/agent-*.jsonl``) mark every
+    entry as a sidechain; pass ``include_sidechain=True`` to walk one of those.
     """
     tools = set(tools)
     path = Path(path)
@@ -148,7 +180,7 @@ def iter_cases(path: str | Path, *, tools: Iterable[str], min_chars: int, window
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(entry, dict) or entry.get("isSidechain"):
+            if not isinstance(entry, dict) or (entry.get("isSidechain") and not include_sidechain):
                 continue
             kind = entry.get("type")
             message = entry.get("message") or {}
@@ -193,7 +225,8 @@ def iter_cases(path: str | Path, *, tools: Iterable[str], min_chars: int, window
                 text = _text_of(content).strip()
                 if text:
                     intent = text
-                    _append_evidence(open_cases, text, text, window)
+                    said = text.replace("\n", " ")
+                    _append_evidence(open_cases, text, text, window, action=f"said: {said[:120]}{'…' if len(said) > 120 else ''}")
                 if isinstance(content, list):
                     for block in content:
                         if not (isinstance(block, dict) and block.get("type") == "tool_use"):
@@ -201,18 +234,82 @@ def iter_cases(path: str | Path, *, tools: Iterable[str], min_chars: int, window
                         name = str(block.get("name") or "")
                         inp = block.get("input") if isinstance(block.get("input"), dict) else {}
                         line_text, ref_text = _tool_input_evidence(name, inp)
-                        _append_evidence(open_cases, line_text, ref_text, window)
+                        _append_evidence(open_cases, line_text, ref_text, window, action=_describe_action(name, inp))
                         if name in tools:
                             pending[str(block.get("id"))] = (
                                 name,
                                 inp,
-                                {"user_request": user_request[-1500:], "assistant_intent": intent[-1500:]},
+                                {"user_request": _head(user_request, 1500), "assistant_intent": _tail(intent, 1500)},
                             )
     yield from open_cases
 
 
+def transcripts_root() -> Path:
+    import os
+
+    return Path(os.environ.get("WINNOW_TRANSCRIPTS_ROOT") or (Path.home() / ".claude" / "projects"))
+
+
+def find_transcript(session_id: str) -> Path | None:
+    """Locate a session's transcript by id under the Claude Code projects directory."""
+    if not session_id:
+        return None
+    root = transcripts_root()
+    if not root.is_dir():
+        return None
+    matches = list(root.glob(f"*/{session_id}.jsonl"))
+    return matches[0] if matches else None
+
+
+def session_title(path: Path) -> str:
+    """The session's title, if Claude Code recorded one (custom titles win over AI titles)."""
+    custom = ai = ""
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if "title" not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                kind = entry.get("type")
+                value = entry.get("customTitle") or entry.get("aiTitle") or entry.get("title")
+                if kind == "custom-title" and value:
+                    custom = str(value)
+                elif kind == "ai-title" and value:
+                    ai = str(value)
+    except OSError:
+        return ""
+    return custom or ai
+
+
+def subagent_transcripts(session_id: str) -> list[Path]:
+    """Transcripts of the subagents a session spawned: ``<project>/<session>/subagents/agent-*.jsonl``."""
+    if not session_id:
+        return []
+    root = transcripts_root()
+    if not root.is_dir():
+        return []
+    return sorted(root.glob(f"*/{session_id}/subagents/agent-*.jsonl"))
+
+
+def subagent_meta(path: Path) -> dict[str, Any]:
+    """The ``.meta.json`` next to a subagent transcript: agentType, description, parent tool use."""
+    meta = path.with_suffix("").with_suffix(".meta.json") if path.name.endswith(".jsonl") else None
+    if meta is None or not meta.exists():
+        return {}
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def default_transcripts() -> list[Path]:
-    root = Path.home() / ".claude" / "projects"
+    root = transcripts_root()
     if not root.is_dir():
         return []
     files = [p for p in root.glob("*/*.jsonl") if p.is_file()]

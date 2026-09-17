@@ -264,7 +264,7 @@ winnow stats
 
 Reports outputs judged and rewritten, characters and estimated tokens saved, judge latency and cost, and the **regret rate**: the share of hidden outputs that Claude later asked to recall.
 
-The better regret number comes from you. `winnow review` walks the stubs from your recent sessions, newest first, shows exactly what was hidden and what the task was, and asks one question per stub: was hiding that fine? Ten of these while the session is still fresh in your head are worth more than a hundred labels on old transcripts, and `winnow stats` reports the result as human regret.
+The better regret number comes from you. `winnow review` walks the stubs from your recent sessions, newest first, and shows the whole picture a person needs: what was asked (for a subagent, its delegation prompt), which subagent ran it, what Claude kept and what it lost, what Claude did in its next few actions, and an automatic check for whether any of those actions reused a line from the hidden text. Then one question per stub: was hiding that fine? Ten of these while the session is still fresh in your head are worth more than a hundred labels on old transcripts, and `winnow stats` reports the result as human regret.
 
 ```bash
 winnow review --limit 10          # y fine, x should have been kept, u unsure

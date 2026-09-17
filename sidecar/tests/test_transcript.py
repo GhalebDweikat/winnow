@@ -42,6 +42,22 @@ def test_new_user_turn_resets_assistant_intent(tmp_path):
     assert task.user_request == "new request" and task.assistant_intent == ""
 
 
+def test_subagent_calls_read_the_subagent_transcript(tmp_path):
+    from winnow.transcript import transcript_for
+
+    main = tmp_path / "sess.jsonl"
+    write_transcript(main, [{"type": "user", "message": {"role": "user", "content": "1"}}])
+    sub = tmp_path / "sess" / "subagents"
+    sub.mkdir(parents=True)
+    write_transcript(sub / "agent-abc.jsonl", [{"type": "user", "isSidechain": True, "message": {"role": "user", "content": "Review the world bible."}}])
+    payload = {"transcript_path": str(main), "session_id": "sess", "agent_id": "abc"}
+    assert transcript_for(payload) == str(sub / "agent-abc.jsonl")
+    assert read_task(transcript_for(payload)).user_request == "Review the world bible."
+    # no agent id, or a subagent file that does not exist: fall back to the main transcript
+    assert transcript_for({"transcript_path": str(main), "session_id": "sess"}) == str(main)
+    assert transcript_for({"transcript_path": str(main), "session_id": "sess", "agent_id": "nope"}) == str(main)
+
+
 def test_missing_transcript_is_empty_task():
     assert read_task(None).is_empty
     assert read_task("Z:/does/not/exist.jsonl").is_empty

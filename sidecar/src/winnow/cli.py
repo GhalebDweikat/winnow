@@ -302,6 +302,7 @@ def main(argv: list[str] | None = None) -> int:
     review.add_argument("--since-days", type=float, default=7)
     review.add_argument("--session", help="only stubs from this session id")
     review.add_argument("--max-lines", type=int, default=40, help="lines of hidden text to show per group")
+    review.add_argument("--show-judge", action="store_true", help="also show the judge's probabilities for the hidden blocks")
 
     replay = sub.add_parser("replay", help="score a judge against your own Claude Code transcripts")
     replay_sub = replay.add_subparsers(dest="replay_command", required=True)
@@ -383,7 +384,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "review":
         from winnow.review import run_review
 
-        run_review(Config.from_env(), limit=args.limit, reviewer=args.reviewer, since_days=args.since_days, session=args.session, max_lines=args.max_lines)
+        run_review(
+            Config.from_env(),
+            limit=args.limit,
+            reviewer=args.reviewer,
+            since_days=args.since_days,
+            session=args.session,
+            max_lines=args.max_lines,
+            show_judge=args.show_judge,
+        )
         return 0
     if args.command == "replay":
         return run_replay_command(args)
