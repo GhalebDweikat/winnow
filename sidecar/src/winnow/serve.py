@@ -239,7 +239,10 @@ def ensure(port: int = DEFAULT_PORT, wait_s: float = 8.0) -> bool:
     cmd = [sys.executable, "-m", "winnow", "serve", "--port", str(port)]
     kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": log_file, "stderr": log_file, "close_fds": True}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        # CREATE_NO_WINDOW, not DETACHED_PROCESS: a venv's python.exe is a launcher that starts the
+        # real interpreter as a child. With no console at all, Windows opens a new visible one for
+        # that child (an empty terminal that kills the sidecar if closed). A hidden console is inherited.
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     else:
         kwargs["start_new_session"] = True
     try:

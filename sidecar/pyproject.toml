@@ -1,6 +1,6 @@
 [project]
 name = "winnow"
-version = "0.3.1"
+version = "0.3.2"
 description = "A calibrated context sieve for Claude Code: judge every tool result before it enters context."
 requires-python = ">=3.10"
 license = "MIT"
