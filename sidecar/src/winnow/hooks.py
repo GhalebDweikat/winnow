@@ -23,7 +23,7 @@ from winnow.memory import load_candidates
 from winnow.policy import decide
 from winnow.stub import assemble, digest, render_stub
 from winnow.summarize import Summarizer, build_summarizer
-from winnow.transcript import Task, read_task, transcript_for
+from winnow.transcript import Task, read_task, task_from_payload, transcript_for
 
 
 @dataclass
@@ -94,7 +94,8 @@ def _judge_window(blocks: list[Block], max_chars: int) -> list[Block]:
     return window
 
 
-def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] | None:
+def post_tool_use(payload: dict[str, Any], runtime: Runtime, meta: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Judge one tool result. ``meta``, if given, receives a summary of a rewrite for the caller's UI."""
     cfg = runtime.cfg
     tool_name = str(payload.get("tool_name") or "")
     if tool_name not in cfg.tools or runtime.judge is None or excluded(tool_name, payload.get("tool_input"), cfg):
@@ -109,7 +110,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
     if len(blocks) < 2:
         return None
 
-    task = read_task(transcript_for(payload))
+    task = task_from_payload(payload) or read_task(transcript_for(payload))
     judged = _judge_window(blocks, cfg.max_state_chars)
     state = {
         "task": task.as_state(),
@@ -122,6 +123,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "post_tool_use",
+        "source": str(payload.get("source") or "http"),
         "mode": cfg.mode,
         "session_id": session_id,
         "tool_use_id": tool_use_id,
@@ -222,6 +224,8 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime) -> dict[str, Any] |
         stubs[group[0].index] = render_stub(group, key, summary, max_p, extracted.line_offset, digest_text=digest(tool_name, text))
 
     new_text = assemble(blocks, verdict, stubs)
+    if meta is not None:
+        meta.update(hidden=len(verdict.pruned), blocks=len(blocks), before=len(extracted.text), after=len(new_text), key=key)
     log.log_event(
         cfg,
         {
@@ -280,6 +284,7 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "user_prompt_submit",
+        "source": str(payload.get("source") or "http"),
         "mode": cfg.mode,
         "session_id": str(payload.get("session_id") or ""),
         "n_candidates": len(candidates),

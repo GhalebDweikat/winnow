@@ -161,6 +161,18 @@ So via command hooks a result under `WINNOW_MIN_CHARS` costs about 370 ms, and a
 
 Judged results also skip the ~500 ms SDK import, and TLS reuse takes the judge round trip itself from the 300–500 ms range down toward the 90 ms Jev shows in replay. If the sidecar is down, results pass through unjudged and Claude Code shows the hook error; `winnow doctor` and `winnow serve --status` both report it.
 
+### Function hooks: the same judge, in-process
+
+Claude Code's function hooks (early access, `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, 2.1.260+) load a TypeScript module into the engine. A `tool.call` handler there sees the call, runs the tool with `next(e)`, and returns `{ result }`: the structured result Claude will read, with no JSON-on-stdout contract and no transcript path. winnow's module (`hooks/winnow.ts`) keeps the judge in the Python sidecar and changes three things:
+
+- **Task state from the live session.** `$.session.messages()` gives the conversation as the engine holds it, so the "current task" is the real last human request and the assistant's last sentence, with no file lag. Inside a subagent the messages are the subagent's own, which closes the state bug that 0.3.4 fixed on the http path by guessing the subagent's transcript file.
+- **Visible decisions.** The sidecar puts a summary of each rewrite in an `X-Winnow` response header (blocks hidden, characters before and after, the recall key) and the module shows it as a toast. Http hooks have no channel for that.
+- **No double judging.** Both paths fire for the same call when the flag is on, and the http hook may arrive with the already-rewritten text. The sidecar keys its last 512 answers by `tool_use_id` and returns the same answer for a repeat, so the rewrite is idempotent whichever path reaches Claude last; a prompt seen again within 30 s gets nothing back, since context must be injected once.
+
+Everything that was measured stays measured: the same extraction, chunking, questions, thresholds and cache, so the calibration numbers above apply unchanged. The module's own tests run under `claude plugin test`, which loads the plugin into an engine with no network, so they cover task reconstruction and the pass-through path (sidecar down, small result, denied call). A live session with the flag on had not been run when this was written; the first one should confirm that the toast appears, that `deduped` climbs in `winnow serve --status`, and that decision lines carry `"source": "function-hook"`.
+
+The engine also offers `session.compact` (2.1.274+), where a hook can replace the compaction result. That is the layer fast-jev-compaction works at; winnow's calibrated block question could run there over whole results before the summary, and the harness can tell whether it should.
+
 ## Known limits
 
 - **Line numbers.** For `Read`, stub line numbers are `startLine + index`, which matches the file when the read started at line 1. If Claude Code's `Read` output is already line-numbered, the numbers inside the text still agree.
@@ -182,3 +194,4 @@ Judged results also skip the ~500 ms SDK import, and TLS reuse takes the judge r
 8. **Live regret, with a human.** Active mode at `drop=0.1` with the recall counter is running. `winnow review` adds the number that matters: the owner judges recent stubs while the session is fresh, and `winnow stats` reports human regret alongside recall regret. First pass (17 Sep 2026): 7 stubs reviewed, 6 of 6 genuine ones fine, the seventh a synthetic test file reviewed without its task; every hidden block was at or below 0.10. Next: thirty clean reviews before claiming zero regret, then a week at `drop=0.15` with the same review.
 9. **Digests instead of silence.** With summaries off, a stub used to say only "25 lines hidden". A hidden Grep result now names the files and counts; other tools get line count, shape (comments, imports, repetition) and the first line. Deterministic, no model.
 6. **Vendor-neutral judge interface.** `judge.py` already has it. Add a fine-tuned encoder backend when one is worth comparing.
+10. **Function-hook mode.** Done in 0.4.0 (`hooks/winnow.ts`): task from the live session, toast per rewrite, dedupe against the http path. Next: a live session with the flag on, then a `session.compact` pass that judges whole results at compaction time with the same calibrated question.

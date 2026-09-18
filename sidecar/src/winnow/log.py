@@ -60,6 +60,7 @@ def stats(cfg: Config) -> dict[str, Any]:
     recalled_keys: set[str] = set()
     context_injections = 0
     reasons: dict[str, int] = {}
+    sources: dict[str, int] = {}
     shadow_judged = shadow_would_rewrite = shadow_saved = 0
 
     for event in read_events(cfg):
@@ -67,6 +68,8 @@ def stats(cfg: Config) -> dict[str, Any]:
             continue
         kind = event.get("event")
         if kind == "post_tool_use":
+            source = str(event.get("source") or "http")
+            sources[source] = sources.get(source, 0) + 1
             if event.get("judge_ms") is not None:
                 judge_ms.append(int(event["judge_ms"]))
             judge_tokens += int(event.get("judge_input_tokens") or 0)
@@ -105,6 +108,7 @@ def stats(cfg: Config) -> dict[str, Any]:
         "outputs_rewritten": rewritten,
         "outputs_passed_through": passthrough,
         "reasons": reasons,
+        "sources": sources,
         "chars_saved": saved,
         "est_tokens_saved": saved // 4,
         "pruned_keys": len(pruned_keys),

@@ -8,3 +8,5 @@ build/
 .winnow/
 .env
 .claude/worktrees/
+.claude/types/
+node_modules/

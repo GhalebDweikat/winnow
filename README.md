@@ -41,7 +41,7 @@ What winnow changes is only what Claude sees. Files on disk, the commands that r
 
 ## Quick start
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer.
+Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer (2.1.260 or newer for the in-process [function-hook mode](#function-hooks-early-access)).
 
 ```bash
 git clone https://github.com/GhalebDweikat/winnow.git
@@ -249,6 +249,32 @@ winnow bench --http     # 381 ms via a command hook, 16 ms via the sidecar, on t
 
 If the server is down, results pass through unjudged and Claude Code shows the hook error; the next session start brings it back. Set `WINNOW_PORT` and edit the URLs in `hooks/hooks.json` together if the port is taken.
 
+## Function hooks (early access)
+
+Claude Code is replacing shell and http hooks with **function hooks**: a TypeScript module the engine loads in-process, whose `tool.call` handler wraps a tool and can hand back a different result. winnow ships one, [`hooks/winnow.ts`](hooks/winnow.ts), next to the http hooks. Claude Code loads it when it runs with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` (2.1.260 or newer) and ignores it otherwise; nothing else changes.
+
+What the module does differently:
+
+- The task the judge sees comes from the live session (`$.session.messages()`), not from the transcript file, so it is never stale and a subagent's calls carry the subagent's own task.
+- When a result is rewritten you see a toast: `winnow: hid 3 of 8 blocks of Read (5.1k to 1.8k chars; winnow_recall ab12)`.
+- Small results never leave the process. Large ones go to the same sidecar, which judges them exactly as before; the module only carries the result there and back.
+
+Both hook paths fire for the same call in a session with the flag on. The sidecar dedupes by tool call id: one judge call, and the same rewrite goes back on both paths (`winnow serve --status` counts them as `deduped`). A prompt reported twice within 30 seconds is answered once.
+
+To turn the flag on everywhere Claude Code runs, add it to `~/.claude/settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
+```
+
+The module's tests run under Claude Code's own kit, with no key and no sidecar (the kit has no network, so they cover the pass-through path and the task reconstruction):
+
+```bash
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
+```
+
+For editor types, run `/plugin-types ./.claude/types` inside a Claude Code session with the flag on; the `tsconfig.json` at the repo root already includes that folder, `hooks/` and `tests/`. The surface is early access and may change between releases; the http hooks stay as the fallback.
+
 ## Housekeeping
 
 ```bash
@@ -308,6 +334,8 @@ winnow/
 ├── .claude-plugin/plugin.json   plugin manifest
 ├── .claude-plugin/marketplace.json  makes the repo installable as a marketplace
 ├── hooks/hooks.json             SessionStart starts the sidecar; PostToolUse + UserPromptSubmit are http hooks to it
+├── hooks/winnow.ts              the same two hooks as a function-hook module (in-process, early access)
+├── tests/winnow.test.ts         its tests, for `claude plugin test`
 ├── .mcp.json                    winnow_recall / winnow_stats MCP server
 ├── skills/winnow/SKILL.md       teaches Claude what a stub means
 ├── sidecar/                     Python package (uv project)
@@ -316,7 +344,7 @@ winnow/
 │   │   ├── judge.py             Jev / adapter backends, one interface
 │   │   ├── transcript.py        derive "current task" from the session transcript
 │   │   ├── extract.py           tool_response → text → tool_response
-│   │   ├── serve.py             the resident sidecar (http hooks)
+│   │   ├── serve.py             the resident sidecar (both hook paths; dedupes them)
 │   │   ├── questions.py         question sets the judge is asked with
 │   │   ├── replay.py  labels.py  the offline benchmark and hand-labeling tools
 │   │   ├── demo.py  bench.py    winnow demo, winnow bench

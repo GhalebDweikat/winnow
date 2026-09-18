@@ -15,12 +15,14 @@ context.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import URLError
@@ -32,6 +34,8 @@ from winnow.config import Config, default_home, env_file_path, load_env_file
 DEFAULT_PORT = 47311
 DEFAULT_IDLE_MINUTES = 45
 EVENTS = {"/hook/post-tool-use": "post-tool-use", "/hook/user-prompt-submit": "user-prompt-submit"}
+ANSWERS_KEPT = 512  # tool results remembered for dedupe
+PROMPT_DEDUPE_S = 30.0  # a prompt seen again within this window is the same prompt
 
 
 class State:
@@ -47,6 +51,11 @@ class State:
         self.env_mtime: float | None = None
         self.loaded_keys: list[str] = []
         self.next_build_attempt = 0.0
+        # Both the http hooks and the function-hook module can report the same tool call
+        # (a session with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS on). Judge it once; answer the same.
+        self.answers: OrderedDict[str, tuple[dict[str, Any] | None, dict[str, Any]]] = OrderedDict()
+        self.prompts: OrderedDict[str, float] = OrderedDict()
+        self.deduped = 0
 
     def _env_mtime(self) -> float | None:
         path = env_file_path()
@@ -85,6 +94,38 @@ class State:
 
 def handle(event: str, payload: dict[str, Any], state: State) -> dict[str, Any] | None:
     """The same logic as ``winnow hook``, with the runtime kept between calls."""
+    return handle_with_meta(event, payload, state)[0]
+
+
+def _remember(state: State, key: str, answer: dict[str, Any] | None, meta: dict[str, Any]) -> None:
+    if not key:
+        return
+    with state.lock:
+        state.answers[key] = (answer, meta)
+        while len(state.answers) > ANSWERS_KEPT:
+            state.answers.popitem(last=False)
+
+
+def _prompt_seen(state: State, payload: dict[str, Any]) -> bool:
+    """True when this prompt was answered in the last PROMPT_DEDUPE_S seconds (the other hook path got it)."""
+    prompt = str(payload.get("prompt") or payload.get("prompt_text") or "")
+    key = hashlib.sha1(f"{payload.get('session_id') or ''}\n{prompt}".encode("utf-8")).hexdigest()
+    now = time.time()
+    with state.lock:
+        seen = state.prompts.get(key)
+        state.prompts[key] = now
+        while len(state.prompts) > 64:
+            state.prompts.popitem(last=False)
+    return seen is not None and now - seen < PROMPT_DEDUPE_S
+
+
+def handle_with_meta(event: str, payload: dict[str, Any], state: State) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """``handle`` plus a summary of what was hidden, for the caller's UI (the X-Winnow header).
+
+    A tool call reported twice (the http hook and the function-hook module both
+    fire in a session with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS on) is judged once and
+    gets the same answer both times; a prompt reported twice is answered once.
+    """
     from winnow.cli import _notify_once
     from winnow.hooks import post_tool_use, user_prompt_submit, worth_judging
 
@@ -92,24 +133,40 @@ def handle(event: str, payload: dict[str, Any], state: State) -> dict[str, Any] 
         state.last_request = time.time()
         state.requests += 1
         cfg = state.config()
+    key = str(payload.get("tool_use_id") or "") if event == "post-tool-use" else ""
+    if key:
+        with state.lock:
+            cached = state.answers.get(key)
+        if cached is not None:
+            with state.lock:
+                state.deduped += 1
+            return cached
     if event == "post-tool-use" and not worth_judging(payload, cfg):
-        return None
+        return None, {}
+    if event == "user-prompt-submit" and _prompt_seen(state, payload):
+        with state.lock:
+            state.deduped += 1
+        return None, {}
     runtime, error = state.get_runtime(cfg)
     if runtime is None:
-        return _notify_once(
+        notice = _notify_once(
             cfg,
             str(payload.get("session_id") or ""),
             f"winnow is running but its judge could not start ({type(error).__name__}: {str(error)[:140]}). "
             "Tool results are passing through untouched. Run `winnow doctor` to fix it.",
         )
+        return notice, {}
+    meta: dict[str, Any] = {}
     try:
         if event == "post-tool-use":
-            return post_tool_use(payload, runtime)
+            output = post_tool_use(payload, runtime, meta)
+            _remember(state, key, output, meta)
+            return output, meta
         if event == "user-prompt-submit":
-            return user_prompt_submit(payload, runtime)
+            return user_prompt_submit(payload, runtime), {}
     except Exception as exc:  # noqa: BLE001 - never break the tool call
         log.log_error(cfg, f"serve:{event}", exc)
-    return None
+    return None, {}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -122,17 +179,21 @@ class Handler(BaseHTTPRequestHandler):
     def state(self) -> State:
         return self.server.state  # type: ignore[attr-defined]
 
-    def _send(self, status: int, body: bytes = b"", content_type: str = "application/json") -> None:
+    def _send(
+        self, status: int, body: bytes = b"", content_type: str = "application/json", headers: dict[str, str] | None = None
+    ) -> None:
         self.send_response(status)
         if body:
             self.send_header("Content-Type", content_type)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if body:
             self.wfile.write(body)
 
-    def _json(self, status: int, obj: Any) -> None:
-        self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+    def _json(self, status: int, obj: Any, headers: dict[str, str] | None = None) -> None:
+        self._send(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), headers=headers)
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib naming
         if self.path == "/health":
@@ -145,6 +206,7 @@ class Handler(BaseHTTPRequestHandler):
                     "version": __version__,
                     "uptime_s": round(time.time() - st.started),
                     "requests": st.requests,
+                    "deduped": st.deduped,
                     "judge_ready": st.runtime is not None and getattr(st.runtime, "judge", None) is not None,
                 },
             )
@@ -169,11 +231,12 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError) as exc:
             self._json(400, {"error": f"bad request: {exc}"})
             return
-        output = handle(event, payload, self.state)
+        output, meta = handle_with_meta(event, payload, self.state)
+        headers = {"X-Winnow": json.dumps(meta, separators=(",", ":"))} if meta else None
         if output is None:
-            self._send(200)  # empty 2xx: pass-through
+            self._send(200, headers=headers)  # empty 2xx: pass-through
         else:
-            self._json(200, output)
+            self._json(200, output, headers=headers)
 
 
 def make_server(port: int, runtime: Any = None) -> ThreadingHTTPServer:
