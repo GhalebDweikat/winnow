@@ -137,6 +137,25 @@ Three phrasings of the per-block question, same 300 cases, same judge, scored on
 
 Expected live effect at `drop=0.1` with `structured`: about 5% of large-result text hidden, at zero hand-label regret. Modest, honest, and the number to beat.
 
+### An open judge? jevlike on the same harness
+
+[jevlike](https://github.com/vinnylarouge/jevlike) is an independent open model with Jev's shape (context plus N options, one probability each), trainable on your own rows. Since winnow's judge interface is vendor-neutral, the obvious question is whether a small local model trained on the replay data can stand in for Jev without a key. `docs/experiments/jevlike_experiment.py` turns the 300 replay cases into jevlike rows (context = task + tool + block, options `needed` / `not needed`, label = the weak label), keeps whole transcripts in one split (6 transcripts; 1,043 / 277 / 195 blocks), trains, and scores the held-out 195 blocks with the same `score()` as everything else. Jev's and the lexical judge's records were rescored on exactly those 50 cases.
+
+| judge on the 195 held-out blocks (weak labels) | ECE | AUC |
+|---|---|---|
+| Jev, default questions | 0.141 | 0.701 |
+| Jev, structured questions | 0.175 | 0.701 |
+| lexical baseline (no model) | 0.313 | 0.635 |
+| jevlike, byte encoder from scratch (16 s on CPU) | 0.315 | 0.453 |
+| jevlike, frozen Qwen2.5-0.5B + head, lr 2e-3 (5 min on an RTX 4060) | 0.168 | 0.566 |
+| jevlike, frozen Qwen2.5-0.5B + head, lr 2e-4 (8 min) | 0.135 | 0.497 |
+
+Two things came out of this, and the second matters more than the first.
+
+The first: with a thousand weak labels, jevlike is not a judge. From scratch it is below a coin flip. With a pretrained encoder it learns something (AUC 0.57) but its ranking is bumpy and its validation loss never beat the base rate for long; the low-learning-rate run converged to predicting the base rate for every block. Files: `docs/results/2026-09-18/`. This is what one would expect from 1k noisy examples, not a verdict on the architecture; ten thousand hand-checked labels would be a different experiment.
+
+The second: **the lr 2e-4 run has the best ECE in the table and is useless.** A judge that says 0.5 to everything is perfectly calibrated on a 48%-needed workload and can hide nothing. Calibration was the headline number in the earlier sections because the threshold question is a calibration question, but it cannot stand alone. `score()` now reports ROC AUC beside ECE (the chance a needed block scores above a not-needed one; 0.5 is a coin flip), and every report prints both. On these blocks Jev's ordering is 0.70 against weak labels, which is real but not dramatic; the lexical baseline's 0.64 says that task-word overlap carries a good part of the signal. What separates Jev is that its low tail is clean (the calibration bins above), which is the part a threshold uses.
+
 ## Latency, measured
 
 `winnow bench` on this machine (Windows 11, Python 3.14, warm disk):
@@ -194,4 +213,5 @@ The engine also offers `session.compact` (2.1.274+), where a hook can replace th
 8. **Live regret, with a human.** Active mode at `drop=0.1` with the recall counter is running. `winnow review` adds the number that matters: the owner judges recent stubs while the session is fresh, and `winnow stats` reports human regret alongside recall regret. First pass (17 Sep 2026): 7 stubs reviewed, 6 of 6 genuine ones fine, the seventh a synthetic test file reviewed without its task; every hidden block was at or below 0.10. Next: thirty clean reviews before claiming zero regret, then a week at `drop=0.15` with the same review.
 9. **Digests instead of silence.** With summaries off, a stub used to say only "25 lines hidden". A hidden Grep result now names the files and counts; other tools get line count, shape (comments, imports, repetition) and the first line. Deterministic, no model.
 6. **Vendor-neutral judge interface.** `judge.py` already has it. Add a fine-tuned encoder backend when one is worth comparing.
+11. **An open judge.** jevlike tried on the harness (above): not usable at 1k weak labels; revisit only with a much larger, cleaner label set, and report AUC beside ECE for any candidate.
 10. **Function-hook mode.** Done in 0.4.0 (`hooks/winnow.ts`): task from the live session, toast per rewrite, dedupe against the http path. Next: a live session with the flag on, then a `session.compact` pass that judges whole results at compaction time with the same calibrated question.

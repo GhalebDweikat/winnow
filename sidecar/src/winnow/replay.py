@@ -545,6 +545,7 @@ def score(records: Iterable[dict[str, Any]], hand_labels: Mapping[tuple[str, str
         "cases": cases,
         "cases_with_errors": errors,
         "judges": dict(judges),
+        "auc": _auc(rows),
         "question_sets": dict(question_sets),
         "label_source": "hand" if hand_labels is not None else "weak",
         "tools": dict(tools),
@@ -561,6 +562,27 @@ def score(records: Iterable[dict[str, Any]], hand_labels: Mapping[tuple[str, str
     }
 
 
+def _auc(rows: list[tuple[float, str, int]]) -> float | None:
+    """ROC AUC of p for "needed": the chance a needed block scores above a not-needed one.
+
+    Calibration alone rewards a judge that predicts the base rate for every block
+    (ECE near zero, nothing to hide); this is the number that says whether the
+    ordering means anything. Ties count half.
+    """
+    pos = sorted(p for p, l, _ in rows if l == "needed")
+    neg = sorted(p for p, l, _ in rows if l == "not_needed")
+    if not pos or not neg:
+        return None
+    from bisect import bisect_left, bisect_right
+
+    wins = 0.0
+    for p in pos:
+        below = bisect_left(neg, p)
+        ties = bisect_right(neg, p) - below
+        wins += below + 0.5 * ties
+    return round(wins / (len(pos) * len(neg)), 4)
+
+
 def _pct(value: float | None, width: int = 6) -> str:
     return "n/a".rjust(width) if value is None else f"{value:.1%}".rjust(width)
 
@@ -573,8 +595,8 @@ def format_report(scored: dict[str, Any]) -> str:
     )
     out.append("tools %s   label reasons %s" % (scored.get("tools"), scored.get("label_reasons")))
     out.append(
-        "blocks scored %d  unknown %d  needed fraction %s   ECE %s"
-        % (scored["blocks_scored"], scored["blocks_unknown"], scored["needed_fraction"], scored["ece"])
+        "blocks scored %d  unknown %d  needed fraction %s   ECE %s   AUC %s"
+        % (scored["blocks_scored"], scored["blocks_unknown"], scored["needed_fraction"], scored["ece"], scored.get("auc"))
     )
     if scored["judge_input_tokens"]:
         out.append(
@@ -601,6 +623,7 @@ def format_report(scored: dict[str, Any]) -> str:
             out.append("  %s   %5d   %.3f    %.3f" % (b["bin"], b["n"], b["mean_p"], b["needed_rate"]))
     out.append("")
     out.append("regret = share of needed blocks a threshold would hide; hidden_precision = share of hidden blocks that were not needed.")
+    out.append("ECE = calibration (0 is perfect); AUC = ordering (0.5 is a coin flip). A judge needs both: the base rate alone scores a low ECE.")
     if scored.get("label_source", "weak") == "weak":
         out.append("Labels are weak (see docs/DESIGN.md): treat regret as an upper bound.")
     else:

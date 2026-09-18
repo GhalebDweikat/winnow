@@ -234,7 +234,7 @@ The words the judge is asked with matter. `WINNOW_QUESTIONS` selects a set, and 
 
 ### Measured
 
-First results on 300 real cases, 97 blind hand labels, three question sets and the sidecar's latency are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/` and a draft write-up in [docs/WRITEUP.md](docs/WRITEUP.md).
+First results on 300 real cases, 97 blind hand labels, three question sets and the sidecar's latency are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/` and a draft write-up in [docs/WRITEUP.md](docs/WRITEUP.md). Reports print calibration (ECE) and ordering (ROC AUC) side by side, because a judge that answers the base rate for every block scores a fine ECE and can hide nothing; an experiment with [jevlike](https://github.com/vinnylarouge/jevlike), an open Jev-shaped model, is what made that necessary (see [docs/DESIGN.md](docs/DESIGN.md#an-open-judge-jevlike-on-the-same-harness)).
 
 ## The resident sidecar
 
@@ -363,11 +363,16 @@ uv sync
 uv run pytest
 ```
 
-Tests run with the judge off and a fake judge, so they need no keys and no network.
+Tests run with the judge off and a fake judge, so they need no keys and no network. The function-hook module has its own tests under Claude Code's kit, which needs no login either:
+
+```bash
+cd winnow
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
+```
 
 ## Roadmap
 
-See [docs/DESIGN.md](docs/DESIGN.md). In short: read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, a resident sidecar for lower latency, cache eviction, and a published regret-versus-threshold curve on real sessions.
+See [docs/DESIGN.md](docs/DESIGN.md). In short: a live run of the function-hook mode, a `session.compact` pass with the same calibrated question, read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, and a published regret-versus-threshold curve on more people's sessions.
 
 ## License
 

@@ -1,0 +1,624 @@
+{
+  "jevlike tiny (weak-trained, held-out sessions)": {
+    "cases": 50,
+    "cases_with_errors": 0,
+    "judges": {
+      "jevlike": 50
+    },
+    "auc": 0.4531,
+    "question_sets": {
+      "n/a": 50
+    },
+    "label_source": "weak",
+    "tools": {
+      "Bash": 27,
+      "Read": 19,
+      "Grep": 4
+    },
+    "label_reasons": {
+      "weak": 195
+    },
+    "blocks_scored": 195,
+    "blocks_unknown": 0,
+    "needed_fraction": 0.4821,
+    "judge_input_tokens": 0,
+    "est_cost_usd_at_jev_price": 0.0,
+    "latency_ms_median": 0,
+    "thresholds": [
+      {
+        "threshold": 0.1,
+        "hidden_blocks": 0,
+        "hidden_fraction_chars": 0.0,
+        "regret": 0.0,
+        "hidden_precision": null
+      },
+      {
+        "threshold": 0.2,
+        "hidden_blocks": 0,
+        "hidden_fraction_chars": 0.0,
+        "regret": 0.0,
+        "hidden_precision": null
+      },
+      {
+        "threshold": 0.3,
+        "hidden_blocks": 3,
+        "hidden_fraction_chars": 0.0026,
+        "regret": 0.0,
+        "hidden_precision": 1.0
+      },
+      {
+        "threshold": 0.4,
+        "hidden_blocks": 5,
+        "hidden_fraction_chars": 0.012,
+        "regret": 0.0106,
+        "hidden_precision": 0.8
+      },
+      {
+        "threshold": 0.5,
+        "hidden_blocks": 9,
+        "hidden_fraction_chars": 0.0197,
+        "regret": 0.0319,
+        "hidden_precision": 0.6667
+      },
+      {
+        "threshold": 0.6,
+        "hidden_blocks": 33,
+        "hidden_fraction_chars": 0.0749,
+        "regret": 0.1809,
+        "hidden_precision": 0.4848
+      },
+      {
+        "threshold": 0.7,
+        "hidden_blocks": 51,
+        "hidden_fraction_chars": 0.1101,
+        "regret": 0.2979,
+        "hidden_precision": 0.451
+      },
+      {
+        "threshold": 0.8,
+        "hidden_blocks": 84,
+        "hidden_fraction_chars": 0.1887,
+        "regret": 0.5106,
+        "hidden_precision": 0.4286
+      },
+      {
+        "threshold": 0.9,
+        "hidden_blocks": 123,
+        "hidden_fraction_chars": 0.3587,
+        "regret": 0.6489,
+        "hidden_precision": 0.5041
+      }
+    ],
+    "calibration": [
+      {
+        "bin": "0.0-0.1",
+        "n": 0,
+        "mean_p": null,
+        "needed_rate": null
+      },
+      {
+        "bin": "0.1-0.2",
+        "n": 0,
+        "mean_p": null,
+        "needed_rate": null
+      },
+      {
+        "bin": "0.2-0.3",
+        "n": 3,
+        "mean_p": 0.212,
+        "needed_rate": 0.0
+      },
+      {
+        "bin": "0.3-0.4",
+        "n": 2,
+        "mean_p": 0.392,
+        "needed_rate": 0.5
+      },
+      {
+        "bin": "0.4-0.5",
+        "n": 4,
+        "mean_p": 0.443,
+        "needed_rate": 0.5
+      },
+      {
+        "bin": "0.5-0.6",
+        "n": 24,
+        "mean_p": 0.559,
+        "needed_rate": 0.583
+      },
+      {
+        "bin": "0.6-0.7",
+        "n": 18,
+        "mean_p": 0.64,
+        "needed_rate": 0.611
+      },
+      {
+        "bin": "0.7-0.8",
+        "n": 33,
+        "mean_p": 0.751,
+        "needed_rate": 0.606
+      },
+      {
+        "bin": "0.8-0.9",
+        "n": 39,
+        "mean_p": 0.847,
+        "needed_rate": 0.333
+      },
+      {
+        "bin": "0.9-1.0",
+        "n": 72,
+        "mean_p": 0.936,
+        "needed_rate": 0.458
+      }
+    ],
+    "ece": 0.3147
+  },
+  "jev structured, same cases": {
+    "cases": 50,
+    "cases_with_errors": 0,
+    "judges": {
+      "typesafe": 50
+    },
+    "auc": 0.701,
+    "question_sets": {
+      "structured": 50
+    },
+    "label_source": "weak",
+    "tools": {
+      "Bash": 27,
+      "Read": 19,
+      "Grep": 4
+    },
+    "label_reasons": {
+      "ident": 84,
+      "none": 101,
+      "line": 10
+    },
+    "blocks_scored": 195,
+    "blocks_unknown": 0,
+    "needed_fraction": 0.4821,
+    "judge_input_tokens": 219889,
+    "est_cost_usd_at_jev_price": 0.009235,
+    "latency_ms_median": 96,
+    "thresholds": [
+      {
+        "threshold": 0.1,
+        "hidden_blocks": 24,
+        "hidden_fraction_chars": 0.0621,
+        "regret": 0.0319,
+        "hidden_precision": 0.875
+      },
+      {
+        "threshold": 0.2,
+        "hidden_blocks": 74,
+        "hidden_fraction_chars": 0.2429,
+        "regret": 0.234,
+        "hidden_precision": 0.7027
+      },
+      {
+        "threshold": 0.3,
+        "hidden_blocks": 113,
+        "hidden_fraction_chars": 0.358,
+        "regret": 0.4362,
+        "hidden_precision": 0.6372
+      },
+      {
+        "threshold": 0.4,
+        "hidden_blocks": 138,
+        "hidden_fraction_chars": 0.4387,
+        "regret": 0.5851,
+        "hidden_precision": 0.6014
+      },
+      {
+        "threshold": 0.5,
+        "hidden_blocks": 155,
+        "hidden_fraction_chars": 0.5188,
+        "regret": 0.7021,
+        "hidden_precision": 0.5742
+      },
+      {
+        "threshold": 0.6,
+        "hidden_blocks": 166,
+        "hidden_fraction_chars": 0.6478,
+        "regret": 0.7766,
+        "hidden_precision": 0.5602
+      },
+      {
+        "threshold": 0.7,
+        "hidden_blocks": 174,
+        "hidden_fraction_chars": 0.8476,
+        "regret": 0.8298,
+        "hidden_precision": 0.5517
+      },
+      {
+        "threshold": 0.8,
+        "hidden_blocks": 185,
+        "hidden_fraction_chars": 0.9378,
+        "regret": 0.9149,
+        "hidden_precision": 0.5351
+      },
+      {
+        "threshold": 0.9,
+        "hidden_blocks": 192,
+        "hidden_fraction_chars": 0.989,
+        "regret": 0.9681,
+        "hidden_precision": 0.526
+      }
+    ],
+    "calibration": [
+      {
+        "bin": "0.0-0.1",
+        "n": 24,
+        "mean_p": 0.07,
+        "needed_rate": 0.125
+      },
+      {
+        "bin": "0.1-0.2",
+        "n": 50,
+        "mean_p": 0.145,
+        "needed_rate": 0.38
+      },
+      {
+        "bin": "0.2-0.3",
+        "n": 39,
+        "mean_p": 0.245,
+        "needed_rate": 0.487
+      },
+      {
+        "bin": "0.3-0.4",
+        "n": 25,
+        "mean_p": 0.346,
+        "needed_rate": 0.56
+      },
+      {
+        "bin": "0.4-0.5",
+        "n": 17,
+        "mean_p": 0.432,
+        "needed_rate": 0.647
+      },
+      {
+        "bin": "0.5-0.6",
+        "n": 11,
+        "mean_p": 0.554,
+        "needed_rate": 0.636
+      },
+      {
+        "bin": "0.6-0.7",
+        "n": 8,
+        "mean_p": 0.646,
+        "needed_rate": 0.625
+      },
+      {
+        "bin": "0.7-0.8",
+        "n": 11,
+        "mean_p": 0.753,
+        "needed_rate": 0.727
+      },
+      {
+        "bin": "0.8-0.9",
+        "n": 7,
+        "mean_p": 0.859,
+        "needed_rate": 0.714
+      },
+      {
+        "bin": "0.9-1.0",
+        "n": 3,
+        "mean_p": 0.917,
+        "needed_rate": 1.0
+      }
+    ],
+    "ece": 0.175
+  },
+  "jev default, same cases": {
+    "cases": 50,
+    "cases_with_errors": 0,
+    "judges": {
+      "typesafe": 50
+    },
+    "auc": 0.7007,
+    "question_sets": {
+      "default": 50
+    },
+    "label_source": "weak",
+    "tools": {
+      "Bash": 27,
+      "Read": 19,
+      "Grep": 4
+    },
+    "label_reasons": {
+      "ident": 84,
+      "none": 101,
+      "line": 10
+    },
+    "blocks_scored": 195,
+    "blocks_unknown": 0,
+    "needed_fraction": 0.4821,
+    "judge_input_tokens": 193954,
+    "est_cost_usd_at_jev_price": 0.008146,
+    "latency_ms_median": 106,
+    "thresholds": [
+      {
+        "threshold": 0.1,
+        "hidden_blocks": 12,
+        "hidden_fraction_chars": 0.0252,
+        "regret": 0.0213,
+        "hidden_precision": 0.8333
+      },
+      {
+        "threshold": 0.2,
+        "hidden_blocks": 44,
+        "hidden_fraction_chars": 0.0951,
+        "regret": 0.1064,
+        "hidden_precision": 0.7727
+      },
+      {
+        "threshold": 0.3,
+        "hidden_blocks": 79,
+        "hidden_fraction_chars": 0.2569,
+        "regret": 0.234,
+        "hidden_precision": 0.7215
+      },
+      {
+        "threshold": 0.4,
+        "hidden_blocks": 113,
+        "hidden_fraction_chars": 0.3531,
+        "regret": 0.4362,
+        "hidden_precision": 0.6372
+      },
+      {
+        "threshold": 0.5,
+        "hidden_blocks": 138,
+        "hidden_fraction_chars": 0.4864,
+        "regret": 0.617,
+        "hidden_precision": 0.5797
+      },
+      {
+        "threshold": 0.6,
+        "hidden_blocks": 152,
+        "hidden_fraction_chars": 0.5988,
+        "regret": 0.6596,
+        "hidden_precision": 0.5921
+      },
+      {
+        "threshold": 0.7,
+        "hidden_blocks": 170,
+        "hidden_fraction_chars": 0.826,
+        "regret": 0.7979,
+        "hidden_precision": 0.5588
+      },
+      {
+        "threshold": 0.8,
+        "hidden_blocks": 180,
+        "hidden_fraction_chars": 0.9074,
+        "regret": 0.8723,
+        "hidden_precision": 0.5444
+      },
+      {
+        "threshold": 0.9,
+        "hidden_blocks": 192,
+        "hidden_fraction_chars": 0.9897,
+        "regret": 0.9681,
+        "hidden_precision": 0.526
+      }
+    ],
+    "calibration": [
+      {
+        "bin": "0.0-0.1",
+        "n": 12,
+        "mean_p": 0.079,
+        "needed_rate": 0.167
+      },
+      {
+        "bin": "0.1-0.2",
+        "n": 32,
+        "mean_p": 0.146,
+        "needed_rate": 0.25
+      },
+      {
+        "bin": "0.2-0.3",
+        "n": 35,
+        "mean_p": 0.242,
+        "needed_rate": 0.343
+      },
+      {
+        "bin": "0.3-0.4",
+        "n": 34,
+        "mean_p": 0.346,
+        "needed_rate": 0.559
+      },
+      {
+        "bin": "0.4-0.5",
+        "n": 25,
+        "mean_p": 0.446,
+        "needed_rate": 0.68
+      },
+      {
+        "bin": "0.5-0.6",
+        "n": 14,
+        "mean_p": 0.525,
+        "needed_rate": 0.286
+      },
+      {
+        "bin": "0.6-0.7",
+        "n": 18,
+        "mean_p": 0.644,
+        "needed_rate": 0.722
+      },
+      {
+        "bin": "0.7-0.8",
+        "n": 10,
+        "mean_p": 0.752,
+        "needed_rate": 0.7
+      },
+      {
+        "bin": "0.8-0.9",
+        "n": 12,
+        "mean_p": 0.84,
+        "needed_rate": 0.75
+      },
+      {
+        "bin": "0.9-1.0",
+        "n": 3,
+        "mean_p": 0.923,
+        "needed_rate": 1.0
+      }
+    ],
+    "ece": 0.1414
+  },
+  "lexical, same cases": {
+    "cases": 50,
+    "cases_with_errors": 0,
+    "judges": {
+      "lexical": 50
+    },
+    "auc": 0.6354,
+    "question_sets": {
+      "default": 50
+    },
+    "label_source": "weak",
+    "tools": {
+      "Bash": 27,
+      "Read": 19,
+      "Grep": 4
+    },
+    "label_reasons": {
+      "ident": 84,
+      "none": 101,
+      "line": 10
+    },
+    "blocks_scored": 195,
+    "blocks_unknown": 0,
+    "needed_fraction": 0.4821,
+    "judge_input_tokens": 0,
+    "est_cost_usd_at_jev_price": 0.0,
+    "latency_ms_median": 0,
+    "thresholds": [
+      {
+        "threshold": 0.1,
+        "hidden_blocks": 61,
+        "hidden_fraction_chars": 0.34,
+        "regret": 0.2128,
+        "hidden_precision": 0.6721
+      },
+      {
+        "threshold": 0.2,
+        "hidden_blocks": 128,
+        "hidden_fraction_chars": 0.4769,
+        "regret": 0.5319,
+        "hidden_precision": 0.6094
+      },
+      {
+        "threshold": 0.3,
+        "hidden_blocks": 156,
+        "hidden_fraction_chars": 0.691,
+        "regret": 0.6809,
+        "hidden_precision": 0.5897
+      },
+      {
+        "threshold": 0.4,
+        "hidden_blocks": 181,
+        "hidden_fraction_chars": 0.8259,
+        "regret": 0.9043,
+        "hidden_precision": 0.5304
+      },
+      {
+        "threshold": 0.5,
+        "hidden_blocks": 189,
+        "hidden_fraction_chars": 0.8678,
+        "regret": 0.9681,
+        "hidden_precision": 0.5185
+      },
+      {
+        "threshold": 0.6,
+        "hidden_blocks": 190,
+        "hidden_fraction_chars": 0.8749,
+        "regret": 0.9681,
+        "hidden_precision": 0.5211
+      },
+      {
+        "threshold": 0.7,
+        "hidden_blocks": 191,
+        "hidden_fraction_chars": 0.8833,
+        "regret": 0.9787,
+        "hidden_precision": 0.5183
+      },
+      {
+        "threshold": 0.8,
+        "hidden_blocks": 193,
+        "hidden_fraction_chars": 0.9229,
+        "regret": 0.9894,
+        "hidden_precision": 0.5181
+      },
+      {
+        "threshold": 0.9,
+        "hidden_blocks": 194,
+        "hidden_fraction_chars": 0.924,
+        "regret": 0.9894,
+        "hidden_precision": 0.5206
+      }
+    ],
+    "calibration": [
+      {
+        "bin": "0.0-0.1",
+        "n": 61,
+        "mean_p": 0.064,
+        "needed_rate": 0.328
+      },
+      {
+        "bin": "0.1-0.2",
+        "n": 67,
+        "mean_p": 0.14,
+        "needed_rate": 0.448
+      },
+      {
+        "bin": "0.2-0.3",
+        "n": 28,
+        "mean_p": 0.254,
+        "needed_rate": 0.5
+      },
+      {
+        "bin": "0.3-0.4",
+        "n": 25,
+        "mean_p": 0.326,
+        "needed_rate": 0.84
+      },
+      {
+        "bin": "0.4-0.5",
+        "n": 8,
+        "mean_p": 0.454,
+        "needed_rate": 0.75
+      },
+      {
+        "bin": "0.5-0.6",
+        "n": 1,
+        "mean_p": 0.521,
+        "needed_rate": 0.0
+      },
+      {
+        "bin": "0.6-0.7",
+        "n": 1,
+        "mean_p": 0.697,
+        "needed_rate": 1.0
+      },
+      {
+        "bin": "0.7-0.8",
+        "n": 2,
+        "mean_p": 0.769,
+        "needed_rate": 0.5
+      },
+      {
+        "bin": "0.8-0.9",
+        "n": 1,
+        "mean_p": 0.85,
+        "needed_rate": 0.0
+      },
+      {
+        "bin": "0.9-1.0",
+        "n": 1,
+        "mean_p": 0.95,
+        "needed_rate": 1.0
+      }
+    ],
+    "ece": 0.3131
+  }
+}

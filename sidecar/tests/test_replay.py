@@ -106,6 +106,7 @@ def test_run_replay_with_lexical_judge_scores_and_writes_files(tmp_path, cfg):
     assert scored["blocks_scored"] >= 4
     assert len(scored["thresholds"]) == 9 and len(scored["calibration"]) == 10
     assert 0 <= scored["ece"] <= 1
+    assert 0 <= scored["auc"] <= 1
     assert score_path.exists() and (cfg.replay_dir / "cases.jsonl").exists() and (cfg.replay_dir / "judged-lexical.jsonl").exists()
     report = replay.format_report(scored)
     assert "threshold" in report and "regret" in report
@@ -132,3 +133,15 @@ def test_case_round_trips_through_jsonl(tmp_path, cfg):
     replay.write_jsonl(out, [replay.case_to_dict(case)])
     back = replay.case_from_dict(next(replay.read_jsonl(out)))
     assert back == case
+
+
+def test_auc_separates_ordering_from_calibration():
+    from winnow.replay import _auc
+
+    perfect = [(0.9, "needed", 1), (0.8, "needed", 1), (0.2, "not_needed", 1), (0.1, "not_needed", 1)]
+    assert _auc(perfect) == 1.0
+    base_rate = [(0.5, "needed", 1), (0.5, "needed", 1), (0.5, "not_needed", 1), (0.5, "not_needed", 1)]
+    assert _auc(base_rate) == 0.5
+    inverted = [(0.1, "needed", 1), (0.9, "not_needed", 1)]
+    assert _auc(inverted) == 0.0
+    assert _auc([(0.3, "needed", 1)]) is None
