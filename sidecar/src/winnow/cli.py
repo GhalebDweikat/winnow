@@ -47,6 +47,7 @@ def run_hook(event: str) -> int:
         from winnow.hooks import Runtime, post_tool_use, user_prompt_submit, worth_judging
 
         payload = _read_stdin_json()
+        payload.setdefault("source", "cli")  # a direct `winnow hook` call; the module tags its own
         if event == "post-tool-use" and not worth_judging(payload, cfg):
             return 0  # fast path: most tool results are small; no judge, no SDK import
         try:
