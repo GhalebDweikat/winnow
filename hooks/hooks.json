@@ -13,31 +13,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Read|Bash|Grep",
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:47311/hook/post-tool-use",
-            "timeout": 60,
-            "statusMessage": "winnow: judging tool output"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:47311/hook/user-prompt-submit",
-            "timeout": 30,
-            "statusMessage": "winnow: selecting context"
-          }
-        ]
-      }
     ]
   }
 }

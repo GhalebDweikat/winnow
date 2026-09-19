@@ -1,4 +1,4 @@
-"""What the function-hook module relies on: a task override, a guessed transcript path, dedupe and the X-Winnow header."""
+"""What the function-hook module relies on: a task override, a guessed transcript path, and the X-Winnow header."""
 
 import json
 import threading
@@ -15,10 +15,10 @@ def numbered(n):
     return "\n".join(f"line {i}" for i in range(1, n + 1))
 
 
-def payload(tool_use_id="t1", source="function-hook", **extra):
+def payload(tool_use_id="t1", **extra):
     return {
         "hook_event_name": "PostToolUse",
-        "source": source,
+        "source": "function-hook",
         "session_id": "s",
         "tool_use_id": tool_use_id,
         "tool_name": "Bash",
@@ -32,7 +32,7 @@ def payload(tool_use_id="t1", source="function-hook", **extra):
 # --------------------------------------------------------------------------- transcript helpers
 
 
-def test_task_override_beats_the_transcript(tmp_path):
+def test_task_override_beats_the_transcript():
     task = task_from_payload(payload())
     assert task is not None
     assert task.user_request == "find the failing step"
@@ -73,7 +73,7 @@ def test_transcript_for_falls_back_to_the_guess(tmp_path, monkeypatch):
     assert transcript_for({"session_id": "s9"}) is None
 
 
-# --------------------------------------------------------------------------- sidecar dedupe + header
+# --------------------------------------------------------------------------- sidecar answers
 
 
 @pytest.fixture
@@ -95,26 +95,12 @@ def post(srv, path, obj):
         return resp.status, (json.loads(body) if body else None), resp.headers.get("X-Winnow")
 
 
-def test_same_tool_use_id_is_judged_once_and_answered_the_same(server):
+def test_the_modules_task_reaches_the_judge(server):
     srv, judge = server
-    status, first, meta = post(srv, "/hook/post-tool-use", payload("t1"))
-    assert status == 200 and first is not None
+    status, body, _ = post(srv, "/hook/post-tool-use", payload("t1"))
+    assert status == 200 and body is not None
     assert len(judge.calls) == 1
     assert judge.calls[0][0]["task"] == {"user_request": "find the failing step", "assistant_intent": "reading the log"}
-
-    # The http hook reports the same call, possibly with the already-rewritten text.
-    again = payload("t1", source="http")
-    again["tool_response"] = first["hookSpecificOutput"]["updatedToolOutput"]
-    status, second, meta2 = post(srv, "/hook/post-tool-use", again)
-    assert second == first and meta2 == meta
-    assert len(judge.calls) == 1
-
-    status, third, _ = post(srv, "/hook/post-tool-use", payload("t2"))
-    assert len(judge.calls) == 2
-
-    port = srv.server_address[1]
-    with urlopen(f"http://127.0.0.1:{port}/health", timeout=5) as resp:
-        assert json.loads(resp.read())["deduped"] == 1
 
 
 def test_x_winnow_header_summarises_the_rewrite(server):
@@ -134,13 +120,10 @@ def test_pass_through_has_no_header(server):
     assert status == 200 and body is None and header is None
 
 
-def test_a_prompt_reported_twice_is_answered_once(cfg, fake_judge_cls, monkeypatch):
-    state = serve.State(runtime=Runtime(cfg, fake_judge_cls({}), None))
-    seen = []
-    monkeypatch.setattr("winnow.hooks.user_prompt_submit", lambda p, r: seen.append(p) or {"hookSpecificOutput": {"additionalContext": "ctx"}})
-    prompt = {"session_id": "s", "prompt": "which files matter for the login bug?"}
-    assert serve.handle("user-prompt-submit", dict(prompt, source="function-hook"), state) is not None
-    assert serve.handle("user-prompt-submit", dict(prompt, source="http"), state) is None
-    assert len(seen) == 1
-    assert serve.handle("user-prompt-submit", {"session_id": "s", "prompt": "a different prompt entirely"}, state) is not None
-    assert len(seen) == 2
+def test_decisions_record_the_source(server, cfg):
+    from winnow import log
+
+    srv, _ = server
+    post(srv, "/hook/post-tool-use", payload("t7"))
+    events = [e for e in log.read_events(cfg) if e.get("tool_use_id") == "t7"]
+    assert events and events[-1]["source"] == "function-hook"

@@ -123,7 +123,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime, meta: dict[str, Any
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "post_tool_use",
-        "source": str(payload.get("source") or "http"),
+        "source": str(payload.get("source") or "cli"),
         "mode": cfg.mode,
         "session_id": session_id,
         "tool_use_id": tool_use_id,
@@ -284,7 +284,7 @@ def user_prompt_submit(payload: dict[str, Any], runtime: Runtime) -> dict[str, A
     event: dict[str, Any] = {
         **runtime.extra_event,
         "event": "user_prompt_submit",
-        "source": str(payload.get("source") or "http"),
+        "source": str(payload.get("source") or "cli"),
         "mode": cfg.mode,
         "session_id": str(payload.get("session_id") or ""),
         "n_candidates": len(candidates),

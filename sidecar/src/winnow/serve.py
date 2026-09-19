@@ -1,11 +1,12 @@
 """``winnow serve``: a resident sidecar so a hook costs a local round trip, not a Python start.
 
-Claude Code's ``http`` hooks POST the event JSON to a URL and read the hook
-output from the response body: an empty 2xx means pass-through, a JSON 2xx is
-the same output a command hook would print, and a connection failure is a
-non-blocking error (the tool result goes through unjudged). This server binds
-to loopback only, keeps the SDK imported and the judge's HTTP client warm, and
-exits after a long idle period.
+The function-hook module (``hooks/winnow.ts``) POSTs each event as JSON and reads
+the answer from the response body: an empty 2xx means pass-through, a JSON 2xx
+carries the rewrite (or the context to inject), an ``X-Winnow`` header summarises
+a rewrite for the module's toast, and a connection failure means the module
+passes the result through untouched. This server binds to loopback only, keeps
+the SDK imported and the judge's HTTP client warm, and exits after a long idle
+period.
 
 ``winnow serve --ensure`` is what the SessionStart hook runs: it checks the
 health endpoint and spawns a detached server if nothing answers. It prints
@@ -15,14 +16,12 @@ context.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
 import sys
 import threading
 import time
-from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import URLError
@@ -34,8 +33,6 @@ from winnow.config import Config, default_home, env_file_path, load_env_file
 DEFAULT_PORT = 47311
 DEFAULT_IDLE_MINUTES = 45
 EVENTS = {"/hook/post-tool-use": "post-tool-use", "/hook/user-prompt-submit": "user-prompt-submit"}
-ANSWERS_KEPT = 512  # tool results remembered for dedupe
-PROMPT_DEDUPE_S = 30.0  # a prompt seen again within this window is the same prompt
 
 
 class State:
@@ -51,11 +48,6 @@ class State:
         self.env_mtime: float | None = None
         self.loaded_keys: list[str] = []
         self.next_build_attempt = 0.0
-        # Both the http hooks and the function-hook module can report the same tool call
-        # (a session with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS on). Judge it once; answer the same.
-        self.answers: OrderedDict[str, tuple[dict[str, Any] | None, dict[str, Any]]] = OrderedDict()
-        self.prompts: OrderedDict[str, float] = OrderedDict()
-        self.deduped = 0
 
     def _env_mtime(self) -> float | None:
         path = env_file_path()
@@ -97,35 +89,8 @@ def handle(event: str, payload: dict[str, Any], state: State) -> dict[str, Any] 
     return handle_with_meta(event, payload, state)[0]
 
 
-def _remember(state: State, key: str, answer: dict[str, Any] | None, meta: dict[str, Any]) -> None:
-    if not key:
-        return
-    with state.lock:
-        state.answers[key] = (answer, meta)
-        while len(state.answers) > ANSWERS_KEPT:
-            state.answers.popitem(last=False)
-
-
-def _prompt_seen(state: State, payload: dict[str, Any]) -> bool:
-    """True when this prompt was answered in the last PROMPT_DEDUPE_S seconds (the other hook path got it)."""
-    prompt = str(payload.get("prompt") or payload.get("prompt_text") or "")
-    key = hashlib.sha1(f"{payload.get('session_id') or ''}\n{prompt}".encode("utf-8")).hexdigest()
-    now = time.time()
-    with state.lock:
-        seen = state.prompts.get(key)
-        state.prompts[key] = now
-        while len(state.prompts) > 64:
-            state.prompts.popitem(last=False)
-    return seen is not None and now - seen < PROMPT_DEDUPE_S
-
-
 def handle_with_meta(event: str, payload: dict[str, Any], state: State) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """``handle`` plus a summary of what was hidden, for the caller's UI (the X-Winnow header).
-
-    A tool call reported twice (the http hook and the function-hook module both
-    fire in a session with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS on) is judged once and
-    gets the same answer both times; a prompt reported twice is answered once.
-    """
+    """``handle`` plus a summary of what was hidden, for the module's toast (the X-Winnow header)."""
     from winnow.cli import _notify_once
     from winnow.hooks import post_tool_use, user_prompt_submit, worth_judging
 
@@ -133,19 +98,7 @@ def handle_with_meta(event: str, payload: dict[str, Any], state: State) -> tuple
         state.last_request = time.time()
         state.requests += 1
         cfg = state.config()
-    key = str(payload.get("tool_use_id") or "") if event == "post-tool-use" else ""
-    if key:
-        with state.lock:
-            cached = state.answers.get(key)
-        if cached is not None:
-            with state.lock:
-                state.deduped += 1
-            return cached
     if event == "post-tool-use" and not worth_judging(payload, cfg):
-        return None, {}
-    if event == "user-prompt-submit" and _prompt_seen(state, payload):
-        with state.lock:
-            state.deduped += 1
         return None, {}
     runtime, error = state.get_runtime(cfg)
     if runtime is None:
@@ -159,9 +112,7 @@ def handle_with_meta(event: str, payload: dict[str, Any], state: State) -> tuple
     meta: dict[str, Any] = {}
     try:
         if event == "post-tool-use":
-            output = post_tool_use(payload, runtime, meta)
-            _remember(state, key, output, meta)
-            return output, meta
+            return post_tool_use(payload, runtime, meta), meta
         if event == "user-prompt-submit":
             return user_prompt_submit(payload, runtime), {}
     except Exception as exc:  # noqa: BLE001 - never break the tool call
@@ -206,7 +157,6 @@ class Handler(BaseHTTPRequestHandler):
                     "version": __version__,
                     "uptime_s": round(time.time() - st.started),
                     "requests": st.requests,
-                    "deduped": st.deduped,
                     "judge_ready": st.runtime is not None and getattr(st.runtime, "judge", None) is not None,
                 },
             )

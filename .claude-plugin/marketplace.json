@@ -11,7 +11,7 @@
       "name": "winnow",
       "source": "./",
       "description": "Every large Read, Bash, or Grep result is judged by a System One model before it enters context. Irrelevant blocks are replaced with a summary and a recall key.",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "author": {
         "name": "Ghaleb Dweikat"
       },

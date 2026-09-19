@@ -11,14 +11,14 @@ Every large `Read`, `Bash`, or `Grep` result is judged before it enters Claude's
 ## What it does
 
 ```
-Read big.py  ──►  Claude Code  ──►  PostToolUse hook  ──►  winnow
+Read big.py  ──►  Claude Code  ──►  tool.call hook  ──►  winnow
                                                              │
         split into ~25-line blocks ◄─────────────────────────┘
         one call to the judge: "is block N needed for the current task?"  ×N, in parallel
         keep confident-yes and uncertain blocks verbatim
         hide confident-no blocks:  cache full text  ─►  summarize  ─►  stub
                                                              │
-Claude sees ◄──  updatedToolOutput  ◄────────────────────────┘
+Claude sees ◄──  { result }  ◄───────────────────────────────┘
 ```
 
 A stub looks like this:
@@ -33,7 +33,7 @@ Without a summarizer the middle line is a deterministic digest instead, so Claud
 
 Two safety rules are built in. If the judge thinks the output shows an error, nothing is hidden. If a block's probability is merely uncertain (between `WINNOW_DROP` and `WINNOW_KEEP`), it is kept. Both thresholds are tunable; the rules themselves are not optional. The default `WINNOW_DROP` of 0.1 is the bin that came back clean on hand-labeled replay (see [Measured](#measured)); raise it only with your own evidence.
 
-The hooks talk to a small resident server (`winnow serve`) on loopback, started at session start, so a hook costs about 16 ms plus the judge call rather than a Python startup. winnow never judges its own files or its own commands, so recalls and labeling sheets always come back whole.
+The hook is a function-hook module (see [How it hooks in](#how-it-hooks-in)) that talks to a small resident server (`winnow serve`) on loopback, started at session start, so a judged call costs about 16 ms plus the judge call rather than a Python startup. winnow never judges its own files or its own commands, so recalls and labeling sheets always come back whole.
 
 A second hook runs at prompt time. It ranks the memory files Claude Code keeps for the project (`~/.claude/projects/<project>/memory/*.md`, everything except the `MEMORY.md` index, which Claude already loads) plus any directories in `WINNOW_CONTEXT_DIRS` against your prompt, and injects the relevant ones so Claude reads what it needs without a round of `Read` calls.
 
@@ -41,7 +41,15 @@ What winnow changes is only what Claude sees. Files on disk, the commands that r
 
 ## Quick start
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.121 or newer (2.1.260 or newer for the in-process [function-hook mode](#function-hooks-early-access)).
+Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Claude Code 2.1.260 or newer with function hooks enabled (early access; one line in settings, below).
+
+First turn on function hooks in `~/.claude/settings.json` (winnow does nothing without this, and `winnow doctor` checks it):
+
+```json
+{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
+```
+
+Then install:
 
 ```bash
 git clone https://github.com/GhalebDweikat/winnow.git
@@ -157,11 +165,11 @@ All settings are environment variables (or lines in `~/.winnow/env`). Defaults a
 | `WINNOW_JUDGE_TIMEOUT` | `15` | Seconds per judge call, including one retry |
 | `WINNOW_ADAPTER_PROVIDER` | `anthropic` | Provider behind the adapter (`anthropic` or `openai`) |
 | `WINNOW_ADAPTER_MODEL` | `claude-haiku-4-5` | Model behind the adapter |
-| `WINNOW_TOOLS` | `Read,Bash,Grep` | Tools whose output is judged. This can only narrow the set; the hook itself fires for `Read|Bash|Grep` as written in `hooks/hooks.json`, so to add a tool edit that matcher too |
+| `WINNOW_TOOLS` | `Read,Bash,Grep` | Tools whose output is judged. This can only narrow the set; the module wraps the tools listed in `TOOLS` in `hooks/winnow.ts`, so to add a tool edit that list too |
 | `WINNOW_QUESTIONS` | `structured` | Question set the judge is asked with: `structured`, `default`, or `strict` |
 | `WINNOW_EXCLUDE_PATHS` | `WINNOW_HOME` | Reads under these directories are never judged (path-separator delimited) |
 | `WINNOW_EXCLUDE_COMMANDS` | `\bwinnow\b` | Bash commands matching this regex are never judged |
-| `WINNOW_PORT` | `47311` | Sidecar port; the URLs in `hooks/hooks.json` must match |
+| `WINNOW_PORT` | `47311` | Sidecar port; `PORT` in `hooks/winnow.ts` must match |
 | `WINNOW_MIN_CHARS` | `1500` | Outputs shorter than this are never touched |
 | `WINNOW_DROP` | `0.1` | Hide a block only when P(needed) is below this |
 | `WINNOW_KEEP` | `0.5` | Error-gate threshold; also the line between "confident keep" and "uncertain keep" |
@@ -236,9 +244,23 @@ The words the judge is asked with matter. `WINNOW_QUESTIONS` selects a set, and 
 
 First results on 300 real cases, 97 blind hand labels, three question sets and the sidecar's latency are in [docs/DESIGN.md](docs/DESIGN.md#first-numbers-jev-vs-the-lexical-baseline), with the raw score files under `docs/results/` and a draft write-up in [docs/WRITEUP.md](docs/WRITEUP.md). Reports print calibration (ECE) and ordering (ROC AUC) side by side, because a judge that answers the base rate for every block scores a fine ECE and can hide nothing; an experiment with [jevlike](https://github.com/vinnylarouge/jevlike), an open Jev-shaped model, is what made that necessary (see [docs/DESIGN.md](docs/DESIGN.md#an-open-judge-jevlike-on-the-same-harness)).
 
+## How it hooks in
+
+winnow is a Claude Code **function-hook** plugin: a TypeScript module, [`hooks/winnow.ts`](hooks/winnow.ts), that the engine loads in-process. Its `tool.call` handler wraps every Read, Bash and Grep call, hands the result to the sidecar with the task read from the live session, and returns the sidecar's rewrite as the tool's result; its `prompt.submit` handler appends the selected context files to the prompt. Function hooks are early access, behind a flag, on Claude Code 2.1.260 or newer. Without the flag the module never loads and winnow does nothing; `winnow doctor` says so.
+
+When a result is rewritten you see a toast: `winnow: hid 3 of 8 blocks of Read (5.1k to 1.8k chars; winnow_recall ab12)`. Small results never leave the process; the judging, thresholds and cache are all in the Python sidecar, so nothing measured below changes with the hook mechanism.
+
+The module's tests run under Claude Code's own kit, with no key and no sidecar (the kit has no network, so they cover task reconstruction and the pass-through path):
+
+```bash
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
+```
+
+For editor types, run `/plugin-types ./.claude/types` inside a Claude Code session with the flag on; the `tsconfig.json` at the repo root already includes that folder, `hooks/` and `tests/`. The surface may change between releases; the plugin pins nothing and is tested against the current one in CI.
+
 ## The resident sidecar
 
-The hooks are `http` hooks against `winnow serve` on `127.0.0.1:47311`. The SessionStart hook runs `winnow serve --ensure`, which starts a detached server if none is answering and replaces one left over from an older plugin version. The server keeps the SDK loaded and the judge's connection warm, re-reads `~/.winnow/env` whenever it changes, and exits after 45 idle minutes.
+The module posts every large result to `winnow serve` on `127.0.0.1:47311`. The SessionStart hook runs `winnow serve --ensure`, which starts a detached server if none is answering and replaces one left over from an older plugin version. The server keeps the SDK loaded and the judge's connection warm, re-reads `~/.winnow/env` whenever it changes, and exits after 45 idle minutes.
 
 ```bash
 winnow serve --status   # is it up, how many requests, is the judge built
@@ -247,33 +269,7 @@ winnow serve --ensure   # what SessionStart runs; prints nothing
 winnow bench --http     # 381 ms via a command hook, 16 ms via the sidecar, on the machine this was built on
 ```
 
-If the server is down, results pass through unjudged and Claude Code shows the hook error; the next session start brings it back. Set `WINNOW_PORT` and edit the URLs in `hooks/hooks.json` together if the port is taken.
-
-## Function hooks (early access)
-
-Claude Code is replacing shell and http hooks with **function hooks**: a TypeScript module the engine loads in-process, whose `tool.call` handler wraps a tool and can hand back a different result. winnow ships one, [`hooks/winnow.ts`](hooks/winnow.ts), next to the http hooks. Claude Code loads it when it runs with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` (2.1.260 or newer) and ignores it otherwise; nothing else changes.
-
-What the module does differently:
-
-- The task the judge sees comes from the live session (`$.session.messages()`), not from the transcript file, so it is never stale and a subagent's calls carry the subagent's own task.
-- When a result is rewritten you see a toast: `winnow: hid 3 of 8 blocks of Read (5.1k to 1.8k chars; winnow_recall ab12)`.
-- Small results never leave the process. Large ones go to the same sidecar, which judges them exactly as before; the module only carries the result there and back.
-
-Both hook paths fire for the same call in a session with the flag on. The sidecar dedupes by tool call id: one judge call, and the same rewrite goes back on both paths (`winnow serve --status` counts them as `deduped`). A prompt reported twice within 30 seconds is answered once.
-
-To turn the flag on everywhere Claude Code runs, add it to `~/.claude/settings.json`:
-
-```json
-{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
-```
-
-The module's tests run under Claude Code's own kit, with no key and no sidecar (the kit has no network, so they cover the pass-through path and the task reconstruction):
-
-```bash
-CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
-```
-
-For editor types, run `/plugin-types ./.claude/types` inside a Claude Code session with the flag on; the `tsconfig.json` at the repo root already includes that folder, `hooks/` and `tests/`. The surface is early access and may change between releases; the http hooks stay as the fallback.
+If the server is down, results pass through unjudged (`claude --debug` logs `winnow: sidecar not answering`); the next session start brings it back. Set `WINNOW_PORT` and `PORT` in `hooks/winnow.ts` together if the port is taken.
 
 ## Housekeeping
 
@@ -307,9 +303,9 @@ winnow recall a1b2c3d4e5f6 --start 41 --end 188
 Working and silently disabled look the same from inside a session, so check in this order.
 
 1. **Is the plugin enabled?** `claude plugin list` should show `winnow@winnow` as enabled. Enable with `claude plugin enable winnow@winnow` and start a new session.
-2. **Is the sidecar up?** `winnow serve --status`. If not, `winnow serve --ensure` starts it; the SessionStart hook does the same. Claude Code also shows a hook error on every judged call while it is down.
+2. **Is the sidecar up?** `winnow serve --status`. If not, `winnow serve --ensure` starts it; the SessionStart hook does the same. While it is down, results pass through and `claude --debug` logs `winnow: sidecar not answering`.
 3. **Can the judge start?** `winnow doctor`. The common failure is a missing key, or a key set in a terminal that the desktop app never sees. When the judge can't start, winnow also posts one message per session saying so.
-4. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered; `"below_min_prune_ratio"` means it would have hidden less than `WINNOW_MIN_PRUNE_RATIO` of the text, so the rewrite was skipped (the usual outcome on ordinary source files at a conservative `WINNOW_DROP`). No line at all means the hook didn't run: check `~/.winnow/errors.log`, then `claude --debug` and look for hook errors.
+4. **Did it fire?** `tail -1 ~/.winnow/decisions.jsonl` after reading a large file. A line with `"rewritten": true` and a `key` means a stub went to Claude. `"reason": "nothing_to_prune"` means the judge thought every block mattered; `"below_min_prune_ratio"` means it would have hidden less than `WINNOW_MIN_PRUNE_RATIO` of the text, so the rewrite was skipped (the usual outcome on ordinary source files at a conservative `WINNOW_DROP`). No line at all means the hook didn't run: `winnow doctor` checks the function-hooks flag; then `~/.winnow/errors.log`; then `claude --debug`, which logs `hooks module winnow@winnow loaded` when the module is in.
 5. **Everything passes through with `judge_error`.** Read `~/.winnow/errors.log`; it has the traceback. Timeouts show up as `TypeSafeAPITimeoutError`; raise `WINNOW_JUDGE_TIMEOUT` or lower `WINNOW_MAX_STATE_CHARS`.
 6. **Stubs appear but nothing is summarized.** Summaries need Anthropic credentials. `winnow doctor` shows whether they were found.
 7. **A file you need came back pruned.** Use the stub's key with `winnow_recall`, or read the range it names with `offset`/`limit`. To keep a directory out of winnow's reach entirely, add it to `WINNOW_EXCLUDE_PATHS`.
@@ -333,8 +329,8 @@ Claude Code runs hooks under Git Bash when it is installed, otherwise PowerShell
 winnow/
 ├── .claude-plugin/plugin.json   plugin manifest
 ├── .claude-plugin/marketplace.json  makes the repo installable as a marketplace
-├── hooks/hooks.json             SessionStart starts the sidecar; PostToolUse + UserPromptSubmit are http hooks to it
-├── hooks/winnow.ts              the same two hooks as a function-hook module (in-process, early access)
+├── hooks/hooks.json             loads the module; SessionStart starts the sidecar
+├── hooks/winnow.ts              the function-hook module: tool.call for Read/Bash/Grep, prompt.submit for context
 ├── tests/winnow.test.ts         its tests, for `claude plugin test`
 ├── .mcp.json                    winnow_recall / winnow_stats MCP server
 ├── skills/winnow/SKILL.md       teaches Claude what a stub means
@@ -344,7 +340,7 @@ winnow/
 │   │   ├── judge.py             Jev / adapter backends, one interface
 │   │   ├── transcript.py        derive "current task" from the session transcript
 │   │   ├── extract.py           tool_response → text → tool_response
-│   │   ├── serve.py             the resident sidecar (both hook paths; dedupes them)
+│   │   ├── serve.py             the resident sidecar the module talks to
 │   │   ├── questions.py         question sets the judge is asked with
 │   │   ├── replay.py  labels.py  the offline benchmark and hand-labeling tools
 │   │   ├── demo.py  bench.py    winnow demo, winnow bench
@@ -370,9 +366,11 @@ cd winnow
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
 ```
 
+One trap when developing: with this checkout as Claude Code's working directory, `.mcp.json` is also read as a project-level MCP config, where `${CLAUDE_PLUGIN_ROOT}` is undefined, so that copy of the recall server fails to start (uv silently runs the wrong interpreter). The installed plugin's copy is unaffected.
+
 ## Roadmap
 
-See [docs/DESIGN.md](docs/DESIGN.md). In short: a live run of the function-hook mode, a `session.compact` pass with the same calibrated question, read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, and a published regret-versus-threshold curve on more people's sessions.
+See [docs/DESIGN.md](docs/DESIGN.md). In short: a `session.compact` pass with the same calibrated question, read-narrowing on `PreToolUse`, a done-ness gate on `Stop`, and a published regret-versus-threshold curve on more people's sessions.
 
 ## License
 

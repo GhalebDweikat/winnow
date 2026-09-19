@@ -136,7 +136,34 @@ def run_doctor(loaded_from_env_file: list[str]) -> int:
         print(f"sidecar                  running on 127.0.0.1:{port} (pid {info.get('pid')}, {info.get('requests')} requests, judge {'ready' if info.get('judge_ready') else 'not built yet'})")
     else:
         print(f"sidecar                  not running on 127.0.0.1:{port} (started by the SessionStart hook; `winnow serve --ensure` starts one)")
+    flag = function_hooks_flag()
+    if flag == "settings":
+        print("function hooks           enabled in ~/.claude/settings.json")
+    elif flag == "env":
+        print("function hooks           enabled in this shell only; put CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 in the env block of ~/.claude/settings.json so every session has it")
+    else:
+        ok = False
+        print(
+            "function hooks           NOT ENABLED: winnow does nothing until ~/.claude/settings.json has "
+            '{"env": {"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"}} (Claude Code 2.1.260+); restart Claude Code after adding it'
+        )
     return 0 if ok else 1
+
+
+def function_hooks_flag() -> str | None:
+    """Where CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 is set: "settings", "env", or None. The module never loads without it."""
+    import json
+    from pathlib import Path
+
+    try:
+        settings = json.loads((Path.home() / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        if str((settings.get("env") or {}).get("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS", "")) == "1":
+            return "settings"
+    except (OSError, ValueError, AttributeError):
+        pass
+    if os.environ.get("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS") == "1":
+        return "env"
+    return None
 
 
 def _transcript_paths(raw: list[str]):

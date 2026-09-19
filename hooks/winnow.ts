@@ -1,20 +1,17 @@
 /**
- * winnow as a Claude Code function-hook module ("Claude Mods", early access).
+ * winnow's hooks: a Claude Code function-hook module ("Claude Mods", early access).
  *
  * Claude Code loads this file when it runs with CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1
- * (2.1.260 or newer) and ignores it otherwise, when the http hooks in hooks.json
- * do the same job. Here winnow wraps every Read, Bash and Grep call in-process:
- * the result goes to the resident sidecar (`winnow serve`) together with the
- * task reconstructed from the live session, and the sidecar's rewrite comes back
- * as the tool's result. At prompt time the module asks the sidecar which context
- * files the prompt needs and appends them to the prompt's context.
- *
- * The sidecar dedupes by tool_use_id, so in a session where both the http hooks
- * and this module fire, each result is judged once and rewritten the same way.
+ * (2.1.260 or newer); without the flag winnow does nothing, which `winnow doctor`
+ * reports. The module wraps every Read, Bash and Grep call in-process: the result
+ * goes to the resident sidecar (`winnow serve`) together with the task read from
+ * the live session, and the sidecar's rewrite comes back as the tool's result.
+ * At prompt time it asks the sidecar which context files the prompt needs and
+ * appends them to the prompt's context.
  */
 import type { EngineInterface, Register, SessionMessage } from 'claude-code'
 
-/** The sidecar's port. Keep it equal to WINNOW_PORT and to the URLs in hooks.json. */
+/** The sidecar's port. Keep it equal to WINNOW_PORT. */
 export const PORT = 47311
 export const TOOLS = ['Read', 'Bash', 'Grep'] as const
 /** Results shorter than this are never rewritten (the sidecar's WINNOW_MIN_CHARS default); skip the round trip. */
@@ -28,6 +25,7 @@ export type Meta = { hidden?: number; blocks?: number; before?: number; after?: 
 
 type HookOutput = {
   hookSpecificOutput?: { updatedToolOutput?: unknown; additionalContext?: string }
+  systemMessage?: string // the sidecar's once-per-session notice when its judge cannot start
 }
 
 type ToolCallEvent = { tool: string; tool_use_id?: string; agentId?: string } & Record<string, unknown>
@@ -138,6 +136,7 @@ export const register: Register = (on) => {
         tool_use_id,
         task: taskFrom(messages),
       })
+      if (typeof res?.output?.systemMessage === 'string') $.ui.toast(res.output.systemMessage)
       const updated = res?.output?.hookSpecificOutput?.updatedToolOutput
       if (updated === undefined) return answer
       if (res?.meta !== undefined) $.ui.toast(describeMeta(toolName, res.meta))
@@ -154,6 +153,7 @@ export const register: Register = (on) => {
       ...where,
       prompt: e.text,
     })
+    if (typeof res?.output?.systemMessage === 'string') $.ui.toast(res.output.systemMessage)
     const extra = res?.output?.hookSpecificOutput?.additionalContext
     if (typeof extra !== 'string' || extra === '') return next(e)
     return next({ ...e, context: [...(e.context ?? []), extra] })
