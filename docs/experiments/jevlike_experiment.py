@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 SCR = Path(__file__).resolve().parent
-sys.path.insert(0, r"C:\GenAI\Claude\Breakthrough\winnow\sidecar\src")
+sys.path.insert(0, str(SCR.parents[1] / "sidecar" / "src"))  # this file lives in docs/experiments/
 os.environ.setdefault("WINNOW_JUDGE", "off")
 
 from winnow.chunk import chunk  # noqa: E402
