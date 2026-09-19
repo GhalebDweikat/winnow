@@ -252,9 +252,9 @@ The engine also offers `session.compact` (2.1.274+), where a hook can replace th
 
 - **Line numbers.** For `Read`, stub line numbers are `startLine + index`, which matches the file when the read started at line 1. If Claude Code's `Read` output is already line-numbered, the numbers inside the text still agree.
 - **Unknown output shapes pass through.** `Glob` and MCP tools that return content-block lists are untouched in v0.
-- **Latency.** Each judged call adds the judge round trip (150 to 500 ms) plus one summarizer call per hidden group (capped at `WINNOW_SUMMARY_MAX_GROUPS`) plus the startup cost measured below. A resident HTTP sidecar (Claude Code supports `http` hooks) would remove the startup cost.
+- **Latency.** Each judged call adds the judge round trip (150 to 500 ms) plus one summarizer call per hidden group (capped at `WINNOW_SUMMARY_MAX_GROUPS`). The module's own cost is a loopback POST to the resident sidecar, about 16 ms; without the sidecar every call would pay a Python start (381 ms measured).
 - **Jev limits are undocumented.** Context window and maximum questions per call are not published. `WINNOW_MAX_STATE_CHARS` and `WINNOW_MAX_BLOCKS` are guesses to tune.
-- **Windows.** Hooks run under Git Bash when present. Paths from Claude Code arrive with backslashes; nothing here assumes otherwise.
+- **Windows.** The SessionStart hook runs under Git Bash when present, otherwise PowerShell. Paths from Claude Code arrive with backslashes; nothing here assumes otherwise.
 - **The venv lives in `sidecar/.venv`.** A plugin's install directory changes on update; moving the environment to `${CLAUDE_PLUGIN_DATA}` would make it survive.
 - **Long-lived processes must not run through the `winnow.exe` launcher.** On Windows a console-script launcher holds its own executable open for as long as the script runs. The per-session MCP server and the sidecar therefore start as `python -m winnow ...`; otherwise the next version bump's editable rebuild fails with "file in use" and every `uv run` in that environment fails with it, hooks included. Found the hard way on 0.3.0.
 

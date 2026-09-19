@@ -184,7 +184,7 @@ All settings are environment variables (or lines in `~/.winnow/env`). Defaults a
 | `WINNOW_CONTEXT_DIRS` | | Extra directories of `.md` files for the prompt-time selector. Path-separator delimited: `:` on macOS and Linux, `;` on Windows |
 | `WINNOW_CONTEXT_GATE` | `0.5` | Minimum P(relevant) to inject a file |
 | `WINNOW_CONTEXT_TOP_K` | `3` | Max files injected per prompt |
-| `WINNOW_CONTEXT_MAX_CHARS` | `8000` | Total injected characters (Claude Code caps hook output at 10,000) |
+| `WINNOW_CONTEXT_MAX_CHARS` | `8000` | Total characters injected per prompt |
 | `WINNOW_CONTEXT_MAX_CANDIDATES` | `60` | Max files considered per prompt |
 | `WINNOW_HOME` | `~/.winnow` | Cache, decision log, env file |
 
@@ -266,7 +266,7 @@ The module posts every large result to `winnow serve` on `127.0.0.1:47311`. The 
 winnow serve --status   # is it up, how many requests, is the judge built
 winnow serve --stop
 winnow serve --ensure   # what SessionStart runs; prints nothing
-winnow bench --http     # 381 ms via a command hook, 16 ms via the sidecar, on the machine this was built on
+winnow bench --http     # 381 ms for a Python start per call vs 16 ms through the resident sidecar, on the machine this was built on
 ```
 
 If the server is down, results pass through unjudged (`claude --debug` logs `winnow: sidecar not answering`); the next session start brings it back. Set `WINNOW_PORT` and `PORT` in `hooks/winnow.ts` together if the port is taken.
@@ -321,7 +321,7 @@ Then delete `~/.winnow` (cache, decision log, and your env file) if you don't wa
 
 ## Windows notes
 
-Claude Code runs hooks under Git Bash when it is installed, otherwise PowerShell; winnow's hook commands work in both. Paths from Claude Code arrive with backslashes, which winnow handles. The env file lives at `%USERPROFILE%\.winnow\env`. `WINNOW_CONTEXT_DIRS` uses `;` between directories. `uv` installs with `winget install astral-sh.uv` or from [astral.sh](https://docs.astral.sh/uv/getting-started/installation/).
+The SessionStart hook that starts the sidecar runs under Git Bash when it is installed, otherwise PowerShell; the command works in both. Paths from Claude Code arrive with backslashes, which winnow handles. The env file lives at `%USERPROFILE%\.winnow\env`. `WINNOW_CONTEXT_DIRS` uses `;` between directories. `uv` installs with `winget install astral-sh.uv` or from [astral.sh](https://docs.astral.sh/uv/getting-started/installation/).
 
 ## Layout
 

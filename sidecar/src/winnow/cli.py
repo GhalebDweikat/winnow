@@ -146,7 +146,7 @@ def run_doctor(loaded_from_env_file: list[str]) -> int:
         ok = False
         print(
             "function hooks           NOT ENABLED: winnow does nothing until ~/.claude/settings.json has "
-            '{"env": {"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"}} (Claude Code 2.1.260+); restart Claude Code after adding it'
+            '{"env": {"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"}} (Claude Code 2.1.260+); sessions started after adding it load the module'
         )
     return 0 if ok else 1
 
