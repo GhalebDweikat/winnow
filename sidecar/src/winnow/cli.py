@@ -13,7 +13,7 @@ import sys
 from typing import Any
 
 from winnow import __version__, cache, log
-from winnow.config import Config, credential_status, env_file_path, load_env_file
+from winnow.config import Config, credential_status, env_file_path, load_env_file, secure_home
 
 
 def _read_stdin_json() -> dict[str, Any]:
@@ -288,6 +288,9 @@ def run_replay_command(args: Any) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # First thing, before any command can create a file: every hook, the sidecar and the
+    # recall server all start here, so this is the one place that covers them all.
+    secure_home()
     parser = argparse.ArgumentParser(prog="winnow", description="A calibrated context sieve for Claude Code.")
     parser.add_argument("--version", action="version", version=f"winnow {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)

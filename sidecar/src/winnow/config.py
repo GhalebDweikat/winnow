@@ -50,6 +50,30 @@ def default_home() -> Path:
     return Path(_str("WINNOW_HOME", str(Path.home() / ".winnow"))).expanduser()
 
 
+def secure_home() -> None:
+    """Keep everything winnow writes private to the user who runs it.
+
+    ``~/.winnow`` holds the full text of everything winnow ever hid, the decision log,
+    and the env file with the API keys. It was created ``0755`` with ``0644`` files under
+    the default umask, so on a shared machine another user could read every file the agent
+    had read (issue #1).
+
+    A process-wide umask rather than a mode at each write site: there are more than a dozen
+    of those, and a new one added later would silently regress. Tightening the directory
+    itself to ``0700`` is what fixes existing installs, because it stops other users
+    traversing into it at all, whatever the files inside were created as.
+
+    On Windows both calls are close to no-ops, and the profile directory is already private.
+    """
+    os.umask(0o077)
+    home = default_home()
+    try:
+        home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        home.chmod(0o700)
+    except OSError:
+        pass  # a read-only or unusual home must not stop a hook from running
+
+
 def env_file_path() -> Path:
     return default_home() / "env"
 

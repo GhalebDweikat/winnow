@@ -42,26 +42,44 @@ class Runtime:
 # PostToolUse: judge each block of a large tool result                        #
 # --------------------------------------------------------------------------- #
 
-def excluded(tool_name: str, tool_input: Any, cfg: Config) -> bool:
+def _under_excluded(raw: str, cwd: str, cfg: Config) -> bool:
+    """Whether a path, resolved against the session's working directory, sits under an excluded base."""
+    if not raw:
+        return False
+    try:
+        path = Path(raw)
+        if not path.is_absolute() and cwd:
+            path = Path(cwd) / path
+        path = path.resolve()
+    except (OSError, ValueError):
+        return False
+    for base in cfg.exclude_paths:
+        try:
+            path.relative_to(base.resolve())
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def excluded(tool_name: str, tool_input: Any, cfg: Config, cwd: str = "") -> bool:
     """winnow never judges its own files or its own commands.
 
     Otherwise ``winnow recall`` output, replay samples, and label files would be
     pruned while you are trying to read them.
+
+    Grep goes through the same path check as Read. It used to fall straight through,
+    so a Grep across ``~/.winnow`` (the recall cache, the decision log, the env file)
+    was judged like any other output while a Read of the same files was not; and a
+    directory added to ``WINNOW_EXCLUDE_PATHS`` to keep it away from the judge was
+    only honored for one of the two tools that read files (issue #1). With no
+    ``path``, Grep searches the working directory, so that is what gets checked.
     """
     tool_input = tool_input if isinstance(tool_input, dict) else {}
     if tool_name == "Read":
-        raw = str(tool_input.get("file_path") or "")
-        if raw:
-            try:
-                path = Path(raw).resolve()
-            except (OSError, ValueError):
-                return False
-            for base in cfg.exclude_paths:
-                try:
-                    path.relative_to(base.resolve())
-                    return True
-                except ValueError:
-                    continue
+        return _under_excluded(str(tool_input.get("file_path") or ""), cwd, cfg)
+    if tool_name == "Grep":
+        return _under_excluded(str(tool_input.get("path") or cwd or ""), cwd, cfg)
     if tool_name == "Bash" and cfg.exclude_commands:
         return re.search(cfg.exclude_commands, str(tool_input.get("command") or "")) is not None
     return False
@@ -70,7 +88,7 @@ def excluded(tool_name: str, tool_input: Any, cfg: Config) -> bool:
 def worth_judging(payload: dict[str, Any], cfg: Config) -> bool:
     """Cheap pre-check that needs no SDK import: right tool, not excluded, big enough output."""
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in cfg.tools or excluded(tool_name, payload.get("tool_input"), cfg):
+    if tool_name not in cfg.tools or excluded(tool_name, payload.get("tool_input"), cfg, str(payload.get("cwd") or "")):
         return False
     extracted = extract(tool_name, payload.get("tool_input"), payload.get("tool_response", payload.get("tool_output")))
     return extracted is not None and len(extracted.text) >= cfg.min_chars
@@ -98,7 +116,7 @@ def post_tool_use(payload: dict[str, Any], runtime: Runtime, meta: dict[str, Any
     """Judge one tool result. ``meta``, if given, receives a summary of a rewrite for the caller's UI."""
     cfg = runtime.cfg
     tool_name = str(payload.get("tool_name") or "")
-    if tool_name not in cfg.tools or runtime.judge is None or excluded(tool_name, payload.get("tool_input"), cfg):
+    if tool_name not in cfg.tools or runtime.judge is None or excluded(tool_name, payload.get("tool_input"), cfg, str(payload.get("cwd") or "")):
         return None
 
     tool_response = payload.get("tool_response", payload.get("tool_output"))

@@ -181,11 +181,30 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return False
 
+    def _read_body(self) -> bytes | None:
+        """The request body, or None when ``Content-Length`` is not a usable number.
+
+        Read before any response: answering before the client has finished writing can abort
+        the connection with a reset on Windows instead of delivering the reply (found in #2).
+
+        The header is parsed defensively because both bad cases used to go wrong silently. A
+        non-integer raised outside any handler, so the client got a dropped connection rather
+        than a 400; a negative value reached ``rfile.read(-1)``, which reads to end of stream
+        and holds the thread until the other side hangs up.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if length < 0:
+            return None
+        return self.rfile.read(length) if length else b""
+
     def do_POST(self) -> None:  # noqa: N802
-        # Always drain the body first: responding before the client has finished writing it
-        # can abort the connection with a reset instead of delivering the response.
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else b""
+        body = self._read_body()
+        if body is None:
+            self._json(400, {"error": "Content-Length must be a non-negative integer"})
+            return
         if self.path == "/shutdown":
             if self._reject_cross_origin():
                 return

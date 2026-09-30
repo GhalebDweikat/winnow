@@ -33,3 +33,27 @@ def test_custom_exclude_paths(monkeypatch, tmp_path):
     cfg = Config.from_env()
     assert excluded("Read", {"file_path": str(tmp_path / "secret" / "k.txt")}, cfg)
     assert not excluded("Read", {"file_path": str(cfg.home / "cache" / "x.json")}, cfg)  # override replaces the default
+
+
+def test_grep_goes_through_the_same_path_check_as_read(cfg, tmp_path):
+    """Grep used to fall straight through, so a search across ~/.winnow was judged while a
+    Read of the same files was not (issue #1)."""
+    assert excluded("Grep", {"pattern": "key", "path": str(cfg.home)}, cfg)
+    assert excluded("Grep", {"pattern": "key", "path": str(cfg.home / "cache")}, cfg)
+    assert not excluded("Grep", {"pattern": "key", "path": str(tmp_path / "project")}, cfg)
+
+
+def test_grep_resolves_relative_paths_and_its_default_against_the_session_cwd(cfg):
+    # A relative path is relative to where Claude is working, not to the sidecar's own cwd.
+    assert excluded("Grep", {"pattern": "x", "path": "cache"}, cfg, cwd=str(cfg.home))
+    # With no path, Grep searches the working directory, so that is what is checked.
+    assert excluded("Grep", {"pattern": "x"}, cfg, cwd=str(cfg.home))
+    assert not excluded("Grep", {"pattern": "x"}, cfg, cwd=str(cfg.home.parent / "elsewhere"))
+
+
+def test_custom_exclude_paths_now_cover_grep_too(monkeypatch, tmp_path):
+    # A directory added to keep it away from the judge was honored for Read and not for Grep.
+    monkeypatch.setenv("WINNOW_EXCLUDE_PATHS", str(tmp_path / "secret"))
+    cfg = Config.from_env()
+    assert excluded("Grep", {"pattern": "token", "path": str(tmp_path / "secret")}, cfg)
+    assert not excluded("Grep", {"pattern": "token", "path": str(tmp_path / "public")}, cfg)

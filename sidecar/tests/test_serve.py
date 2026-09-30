@@ -1,5 +1,6 @@
 import json
 import threading
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
@@ -66,13 +67,13 @@ def test_bad_json_and_unknown_paths(server):
     srv, _ = server
     port = srv.server_address[1]
     req = Request(f"http://127.0.0.1:{port}/hook/post-tool-use", data=b"not json", headers={"Content-Type": "application/json"}, method="POST")
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(HTTPError) as excinfo:
         urlopen(req, timeout=5)
-    assert "400" in str(excinfo.value)
+    assert excinfo.value.code == 400
     req = Request(f"http://127.0.0.1:{port}/nope", data=b"{}", method="POST")
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(HTTPError) as excinfo:
         urlopen(req, timeout=5)
-    assert "404" in str(excinfo.value)
+    assert excinfo.value.code == 404
 
 
 def test_missing_judge_notifies_once_per_session(cfg, monkeypatch):
@@ -99,9 +100,9 @@ def test_rejects_request_carrying_an_origin_header(server):
         headers={"Content-Type": "application/json", "Origin": "https://evil.example"},
         method="POST",
     )
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(HTTPError) as excinfo:
         urlopen(req, timeout=5)
-    assert "403" in str(excinfo.value)
+    assert excinfo.value.code == 403
 
 
 def test_rejects_non_json_content_type(server):
@@ -113,9 +114,9 @@ def test_rejects_non_json_content_type(server):
         headers={"Content-Type": "text/plain"},
         method="POST",
     )
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(HTTPError) as excinfo:
         urlopen(req, timeout=5)
-    assert "403" in str(excinfo.value)
+    assert excinfo.value.code == 403
 
 
 def test_rejects_cross_origin_shutdown(server):
@@ -127,6 +128,36 @@ def test_rejects_cross_origin_shutdown(server):
         headers={"Origin": "https://evil.example"},
         method="POST",
     )
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(HTTPError) as excinfo:
         urlopen(req, timeout=5)
-    assert "403" in str(excinfo.value)
+    assert excinfo.value.code == 403
+
+
+def _raw_post(srv, content_length: str) -> bytes:
+    """Send a POST with an arbitrary Content-Length header, below urllib (which would fix it)."""
+    import socket
+
+    port = srv.server_address[1]
+    crlf = "\r\n"
+    head = crlf.join(
+        [
+            "POST /hook/post-tool-use HTTP/1.1",
+            "Host: 127.0.0.1",
+            "Content-Type: application/json",
+            f"Content-Length: {content_length}",
+            "",
+            "",
+        ]
+    )
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(head.encode())
+        return sock.recv(4096)
+
+
+@pytest.mark.parametrize("bad", ["abc", "-1", "1.5"])
+def test_a_bad_content_length_is_a_400_not_a_dropped_or_held_connection(server, bad):
+    """A non-integer raised outside any handler and dropped the connection; a negative one
+    reached rfile.read(-1), which reads to end of stream and holds the thread."""
+    srv, _ = server
+    reply = _raw_post(srv, bad)
+    assert reply.startswith(b"HTTP/1.0 400") or reply.startswith(b"HTTP/1.1 400"), reply[:60]
