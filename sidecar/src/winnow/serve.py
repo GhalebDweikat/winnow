@@ -163,8 +163,32 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(404, {"error": "not found"})
 
+    def _reject_cross_origin(self) -> bool:
+        """Reject anything a cross-origin browser request could send without a CORS preflight.
+
+        A form-style POST from any page you visit is a CORS "simple request" as long as it carries
+        no custom headers and no Content-Type outside a small allow-list: no preflight, and the
+        browser still sends it. Browsers do attach an ``Origin`` header to it regardless, and a
+        simple request can't set ``Content-Type: application/json`` - both are true only of a
+        request a script (not a browser page) built on purpose.
+        """
+        if self.headers.get("Origin") is not None:
+            self._json(403, {"error": "cross-origin requests are not allowed"})
+            return True
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            self._json(403, {"error": "Content-Type must be application/json"})
+            return True
+        return False
+
     def do_POST(self) -> None:  # noqa: N802
+        # Always drain the body first: responding before the client has finished writing it
+        # can abort the connection with a reset instead of delivering the response.
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
         if self.path == "/shutdown":
+            if self._reject_cross_origin():
+                return
             self._send(200)
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
@@ -172,9 +196,9 @@ class Handler(BaseHTTPRequestHandler):
         if event is None:
             self._json(404, {"error": "not found"})
             return
+        if self._reject_cross_origin():
+            return
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(length) if length else b""
             payload = json.loads(body.decode("utf-8")) if body else {}
             if not isinstance(payload, dict):
                 raise ValueError("payload must be an object")
@@ -228,7 +252,13 @@ def health(port: int = DEFAULT_PORT, timeout: float = 0.5) -> dict[str, Any] | N
 
 def stop(port: int = DEFAULT_PORT) -> bool:
     try:
-        with urlopen(Request(f"http://127.0.0.1:{port}/shutdown", data=b"", method="POST"), timeout=2):
+        req = Request(
+            f"http://127.0.0.1:{port}/shutdown",
+            data=b"",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(req, timeout=2):
             return True
     except (URLError, OSError):
         return False

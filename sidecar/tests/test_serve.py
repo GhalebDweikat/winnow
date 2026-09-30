@@ -88,3 +88,45 @@ def test_missing_judge_notifies_once_per_session(cfg, monkeypatch):
 
 def test_health_reports_absent_server():
     assert serve.health(1) is None  # nothing listens on port 1
+
+
+def test_rejects_request_carrying_an_origin_header(server):
+    srv, _ = server
+    port = srv.server_address[1]
+    req = Request(
+        f"http://127.0.0.1:{port}/hook/post-tool-use",
+        data=json.dumps(bash_payload("tiny")).encode(),
+        headers={"Content-Type": "application/json", "Origin": "https://evil.example"},
+        method="POST",
+    )
+    with pytest.raises(Exception) as excinfo:
+        urlopen(req, timeout=5)
+    assert "403" in str(excinfo.value)
+
+
+def test_rejects_non_json_content_type(server):
+    srv, _ = server
+    port = srv.server_address[1]
+    req = Request(
+        f"http://127.0.0.1:{port}/hook/post-tool-use",
+        data=json.dumps(bash_payload("tiny")).encode(),
+        headers={"Content-Type": "text/plain"},
+        method="POST",
+    )
+    with pytest.raises(Exception) as excinfo:
+        urlopen(req, timeout=5)
+    assert "403" in str(excinfo.value)
+
+
+def test_rejects_cross_origin_shutdown(server):
+    srv, _ = server
+    port = srv.server_address[1]
+    req = Request(
+        f"http://127.0.0.1:{port}/shutdown",
+        data=b"",
+        headers={"Origin": "https://evil.example"},
+        method="POST",
+    )
+    with pytest.raises(Exception) as excinfo:
+        urlopen(req, timeout=5)
+    assert "403" in str(excinfo.value)
